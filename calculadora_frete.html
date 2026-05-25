@@ -1,0 +1,2851 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calculadora de Frete — CKC / Super ABC</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  /* ===========================================================
+     RESET + BASE
+     =========================================================== */
+  *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#1a1a1a;
+    --panel:#262626;
+    --panel-2:#2f2f2f;
+    --line:#3a3a3a;
+    --line-soft:#333;
+    --text:#f3f3f3;
+    --text-dim:#a8a8a8;
+    --text-mute:#6f6f6f;
+    --accent:#ffc73a;
+    --accent-2:#ffd866;
+    --ok:#4ade80;
+    --warn:#fb923c;
+    --err:#f87171;
+    --shadow: 0 6px 24px rgba(0,0,0,.35);
+    --radius: 6px;
+  }
+  html,body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    min-height: 100vh;
+    -webkit-text-size-adjust: 100%;
+  }
+  body { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+  @media (max-width: 768px) {
+    body { padding: 12px; font-size: 13px; }
+  }
+  @media (max-width: 480px) {
+    body { padding: 10px 8px; }
+  }
+
+  /* ===========================================================
+     LAYOUT
+     =========================================================== */
+  .header {
+    background: linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    padding: 18px 22px;
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .header h1 {
+    font-size: 22px;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .header .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    letter-spacing: 0.3px;
+  }
+  .header-meta {
+    font-size: 11px;
+    color: var(--text-mute);
+    text-align: right;
+  }
+  @media (max-width: 600px) {
+    .header { padding: 14px 16px; gap: 6px; }
+    .header h1 { font-size: 17px; }
+    .header h1 .badge { display: none; }
+    .header .sub { font-size: 10.5px; }
+    .header-meta { text-align: left; font-size: 10px; }
+    .header-meta > div { display: inline-block; margin-right: 10px; }
+  }
+  .badge {
+    display: inline-block;
+    background: var(--accent);
+    color: #1a1a1a;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid var(--line);
+    margin-bottom: 18px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    position: relative;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  /* Dica de scroll à direita (sombra fade) — só no mobile */
+  @media (max-width: 600px) {
+    .tabs-wrap {
+      position: relative;
+    }
+    .tabs-wrap::after {
+      content: "";
+      position: absolute;
+      right: 0; top: 0; bottom: 2px;
+      width: 28px;
+      pointer-events: none;
+      background: linear-gradient(to right, transparent, var(--bg) 90%);
+      z-index: 1;
+    }
+  }
+  .tab {
+    padding: 10px 18px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: all .15s;
+    font-family: inherit;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab .tab-short { display: none; }
+  @media (max-width: 600px) {
+    .tab { padding: 9px 10px; font-size: 11.5px; }
+    .tab .tab-full { display: none; }
+    .tab .tab-short { display: inline; }
+  }
+  @media (max-width: 400px) {
+    .tab { padding: 8px 8px; font-size: 11px; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 600px) {
+    .panel { padding: 14px 12px; margin-bottom: 12px; }
+  }
+  .panel-title {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--accent);
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 700;
+  }
+  @media (max-width: 600px) {
+    .panel-title { font-size: 11.5px; letter-spacing: 0.8px; margin-bottom: 10px; }
+  }
+
+  /* Tab content */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ===========================================================
+     FORMS
+     =========================================================== */
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  @media (max-width: 900px) {
+    .grid-4, .grid-3 { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 600px) {
+    .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; gap: 10px; }
+  }
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color .15s, background .15s;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: #353535;
+  }
+  input[readonly] {
+    background: #1f1f1f;
+    color: var(--text-dim);
+    cursor: not-allowed;
+  }
+  .field-hint {
+    font-size: 10px;
+    color: var(--text-mute);
+    margin-top: 3px;
+  }
+  @media (max-width: 600px) {
+    /* iOS evita zoom se >=16px */
+    input[type="text"], input[type="number"], select, textarea {
+      font-size: 16px;
+      padding: 10px 11px;
+    }
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 9px 18px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all .15s;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn:hover { background: #383838; border-color: #555; }
+  .btn-primary {
+    background: var(--accent);
+    color: #1a1a1a;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .btn-danger {
+    background: transparent;
+    border-color: #5a2424;
+    color: var(--err);
+  }
+  .btn-danger:hover { background: #2a1818; }
+  .btn-small {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+  .btn-icon {
+    padding: 5px 8px;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  /* Upload area */
+  .drop-zone {
+    border: 2px dashed var(--line);
+    background: var(--panel-2);
+    padding: 32px;
+    border-radius: var(--radius);
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    margin-bottom: 14px;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent);
+    background: #2c2c2c;
+  }
+  .drop-zone .icon {
+    font-size: 32px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .drop-zone .title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .drop-zone .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  @media (max-width: 600px) {
+    .drop-zone { padding: 22px 14px; }
+    .drop-zone .icon { font-size: 26px; }
+    .drop-zone .title { font-size: 13px; }
+    .drop-zone .sub { font-size: 11px; }
+  }
+
+  /* ===========================================================
+     TABLE - PEDIDOS
+     =========================================================== */
+  .pedidos-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-top: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+  table.pedidos {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    min-width: 1050px;
+  }
+  table.pedidos thead {
+    background: #1a1a1a;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  table.pedidos th {
+    padding: 10px 8px;
+    text-align: left;
+    font-weight: 700;
+    color: var(--accent);
+    font-size: 10.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-bottom: 2px solid var(--line);
+    white-space: nowrap;
+  }
+  table.pedidos td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: middle;
+  }
+  table.pedidos tbody tr:hover { background: #2c2c2c; }
+  table.pedidos tbody tr.route-header {
+    background: #1f1f1f;
+    border-top: 2px solid var(--accent);
+  }
+  table.pedidos tbody tr.route-header td {
+    padding: 10px 8px;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  table.pedidos tbody tr.route-totals {
+    background: #222;
+    border-top: 1px solid var(--line);
+  }
+  table.pedidos tbody tr.route-totals td {
+    color: var(--accent-2);
+    font-weight: 600;
+    font-size: 11.5px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  table.pedidos tbody tr.row-unmatched { background: #2a1f1f; }
+  table.pedidos tbody tr.row-unmatched:hover { background: #322626; }
+
+  /* === ALERTA: frete maior que valor da NF === */
+  @keyframes pulseFreteAlto {
+    0%, 100% {
+      background: #3a1818;
+      box-shadow: inset 4px 0 0 var(--err), 0 0 0 0 rgba(248, 113, 113, 0);
+    }
+    50% {
+      background: #4a1c1c;
+      box-shadow: inset 4px 0 0 #ff5555, 0 0 0 4px rgba(248, 113, 113, 0.18);
+    }
+  }
+  @keyframes blinkBadge {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.08); opacity: 0.7; }
+  }
+  table.pedidos tbody tr.row-frete-alto {
+    animation: pulseFreteAlto 1.8s ease-in-out infinite;
+  }
+  table.pedidos tbody tr.row-frete-alto:hover {
+    animation-play-state: paused;
+    background: #4a2424 !important;
+  }
+  .frete-warn-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--err);
+    color: #fff;
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+    animation: blinkBadge 1.4s ease-in-out infinite;
+    white-space: nowrap;
+  }
+  .frete-warn-counter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #3a1818;
+    border: 1px solid var(--err);
+    color: #ffaaaa;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    animation: pulseFreteAlto 1.8s ease-in-out infinite;
+  }
+  .frete-warn-counter .icon {
+    font-size: 14px;
+    animation: blinkBadge 1.4s ease-in-out infinite;
+  }
+  /* desabilitar animação se o usuário prefere menos movimento */
+  @media (prefers-reduced-motion: reduce) {
+    table.pedidos tbody tr.row-frete-alto,
+    .frete-warn-badge,
+    .frete-warn-counter,
+    .frete-warn-counter .icon {
+      animation: none !important;
+    }
+    table.pedidos tbody tr.row-frete-alto {
+      background: #3a1818;
+      box-shadow: inset 4px 0 0 var(--err);
+    }
+  }
+
+  /* Inline inputs in table */
+  table.pedidos input.cell-input {
+    background: #1a1a1a;
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 4px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: inherit;
+    width: 100%;
+    min-width: 60px;
+  }
+  table.pedidos input.cell-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: #232323;
+  }
+  table.pedidos input.cell-input.warning {
+    border-color: var(--warn);
+    background: #2a2118;
+  }
+  table.pedidos select.cell-input {
+    background: #1a1a1a;
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 4px 4px;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-family: inherit;
+  }
+  td.col-cidade { min-width: 160px; }
+  td.col-num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.col-num-bold { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent-2); }
+  td.col-tag { white-space: nowrap; }
+
+  /* === MOBILE: tabela vira cards === */
+  @media (max-width: 820px) {
+    .pedidos-wrap {
+      overflow-x: visible;
+      border: none;
+      background: transparent;
+    }
+    table.pedidos { min-width: 0; display: block; }
+    table.pedidos thead { display: none; }
+    table.pedidos tbody { display: block; }
+
+    /* route header como bloco */
+    table.pedidos tbody tr.route-header {
+      display: block;
+      padding: 0;
+      margin-top: 14px;
+      border-radius: 4px 4px 0 0;
+      border: 1px solid var(--line);
+      border-bottom: 2px solid var(--accent);
+    }
+    table.pedidos tbody tr.route-header td {
+      display: block;
+      padding: 9px 12px;
+      border: none;
+      font-size: 11px;
+    }
+
+    /* card de pedido */
+    table.pedidos tbody tr[data-id] {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 10px;
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-top: none;
+      border-bottom: 1px solid var(--line-soft);
+      position: relative;
+    }
+    table.pedidos tbody tr[data-id]:hover { background: var(--panel); }
+    table.pedidos tbody tr[data-id].row-unmatched { background: #2a1f1f; }
+
+    /* Cada td vira um bloco com label antes */
+    table.pedidos tbody tr[data-id] td {
+      display: block;
+      padding: 0;
+      border: none;
+      font-size: 12px;
+      position: relative;
+    }
+    table.pedidos tbody tr[data-id] td::before {
+      content: attr(data-label);
+      display: block;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-mute);
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    /* Cells que ocupam linha inteira */
+    table.pedidos tbody tr[data-id] td.m-full { grid-column: 1 / -1; }
+    /* Esconder a coluna # no mobile */
+    table.pedidos tbody tr[data-id] td.m-hide { display: none; }
+    /* Esconder Tipo no mobile quando é redundante com a Rota */
+    table.pedidos tbody tr[data-id] td.m-hide-tipo { display: none; }
+    /* Botão delete fica posicionado no canto */
+    table.pedidos tbody tr[data-id] td.m-delete {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 0;
+    }
+    table.pedidos tbody tr[data-id] td.m-delete::before { display: none; }
+
+    /* Inputs maiores no toque */
+    table.pedidos input.cell-input,
+    table.pedidos select.cell-input {
+      font-size: 14px;
+      padding: 7px 8px;
+      min-width: 0;
+      width: 100%;
+    }
+
+    /* Totais da rota */
+    table.pedidos tbody tr.route-totals {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 10px;
+      padding: 12px;
+      background: #1f1f1f;
+      border: 1px solid var(--line);
+      border-top: none;
+      border-bottom: 2px solid var(--accent);
+      border-radius: 0 0 4px 4px;
+      margin-bottom: 4px;
+    }
+    table.pedidos tbody tr.route-totals td {
+      display: block;
+      padding: 0;
+      border: none;
+      font-size: 11.5px;
+    }
+    table.pedidos tbody tr.route-totals td:empty,
+    table.pedidos tbody tr.route-totals td.m-skip { display: none; }
+    table.pedidos tbody tr.route-totals td.m-rt-label {
+      grid-column: 1 / -1;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 2px;
+    }
+    table.pedidos tbody tr.route-totals td::before {
+      content: attr(data-label);
+      display: block;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-mute);
+      font-weight: 600;
+      margin-bottom: 1px;
+    }
+    table.pedidos tbody tr.route-totals td.m-rt-label::before { display: none; }
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag-rota { background: #2d3a4a; color: #94c1ff; }
+  .tag-cross { background: #2d3d2d; color: #9fd99f; }
+  .tag-truck { background: #4a3a1f; color: #f0c890; }
+  .tag-sjrp  { background: #4a2d4a; color: #d990d9; }
+  .tag-corridor { background: #3a3a3a; color: #c5c5c5; }
+  .tag-unmatched { background: #4a2222; color: #f8a8a8; }
+
+  /* Totals card */
+  .totals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .total-card {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    padding: 12px 14px;
+    border-radius: 4px;
+  }
+  .total-card .label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .total-card .value {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .total-card.highlight {
+    border-left-color: var(--ok);
+    background: #1f2a1f;
+  }
+  .total-card.highlight .value { color: var(--ok); }
+  @media (max-width: 600px) {
+    .totals-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .total-card { padding: 9px 10px; }
+    .total-card .label { font-size: 9px; letter-spacing: 0.6px; }
+    .total-card .value { font-size: 14px; }
+    .total-card.highlight { grid-column: 1 / -1; }
+    .total-card.highlight .value { font-size: 22px; }
+  }
+
+  /* Alerts */
+  .alert {
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    margin-bottom: 12px;
+    border-left: 3px solid var(--warn);
+    background: #2a1f0f;
+    color: #fbcf91;
+  }
+  .alert.err {
+    border-left-color: var(--err);
+    background: #2a1414;
+    color: #fbaaaa;
+  }
+  .alert.ok {
+    border-left-color: var(--ok);
+    background: #142a14;
+    color: #aafbaa;
+  }
+  .alert.info {
+    border-left-color: #5b8ddb;
+    background: #14202a;
+    color: #aac8fb;
+  }
+
+  /* Empty state */
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-mute);
+  }
+  .empty .icon { font-size: 48px; margin-bottom: 12px; }
+  .empty h3 { color: var(--text-dim); font-weight: 500; margin-bottom: 6px; }
+  .empty p { font-size: 13px; }
+
+  /* Config Tab */
+  .config-section { margin-bottom: 18px; }
+  .config-section h3 {
+    font-size: 12px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .preset-bar {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    padding: 12px;
+    background: var(--panel-2);
+    border-radius: 4px;
+    border: 1px solid var(--line);
+  }
+  .preset-bar > div { flex: 1; min-width: 160px; }
+
+  /* Cidades table */
+  .cidades-wrap {
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  table.cidades {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  table.cidades thead {
+    background: #1a1a1a;
+    position: sticky;
+    top: 0;
+  }
+  table.cidades th {
+    padding: 8px 10px;
+    text-align: left;
+    color: var(--accent);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--line);
+  }
+  table.cidades td {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  table.cidades tbody tr:hover { background: #2c2c2c; }
+  @media (max-width: 600px) {
+    table.cidades { font-size: 11.5px; }
+    table.cidades th { padding: 6px 6px; font-size: 9.5px; }
+    table.cidades td { padding: 5px 6px; }
+    /* esconder coluna Região e Saída no mobile */
+    table.cidades th:nth-child(3),
+    table.cidades td:nth-child(3),
+    table.cidades th:nth-child(5),
+    table.cidades td:nth-child(5) { display: none; }
+  }
+
+  .search-bar { margin-bottom: 10px; }
+
+  /* Footer */
+  .footer {
+    margin-top: 30px;
+    text-align: center;
+    color: var(--text-mute);
+    font-size: 11px;
+    padding: 16px;
+  }
+
+  /* Loading */
+  .loading {
+    display: inline-block;
+    padding: 8px 14px;
+    background: var(--panel-2);
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  /* Tab bloqueada e área de análise */
+  .tab-locked { opacity: 0.65; }
+  .tab-locked.unlocked { opacity: 1; }
+  .tab-locked.unlocked .tab-full::before,
+  .tab-locked.unlocked .tab-short::before { content: ""; }
+  .analise-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 12.5px;
+    padding: 5px 0;
+    color: var(--text-dim);
+    gap: 10px;
+  }
+  .analise-row strong {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .analise-row.total {
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    margin-top: 6px;
+    padding: 8px 0;
+    font-size: 13px;
+  }
+  .analise-row.total span {
+    color: var(--text);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10.5px;
+    letter-spacing: 1px;
+  }
+  .analise-row.total strong { font-size: 16px; color: var(--accent-2); }
+  @media (max-width: 700px) {
+    #analiseGrid { grid-template-columns: 1fr !important; }
+    #vereditoValor { font-size: 26px !important; }
+  }
+  .status-ok    { color: var(--ok); font-weight: 700; }
+  .status-warn  { color: var(--warn); font-weight: 700; }
+  .status-bad   { color: var(--err); font-weight: 700; }
+
+  /* Modal */
+  .modal-back {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+  .modal-back.show { display: flex; }
+  .modal-box {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 22px;
+    max-width: 380px;
+    width: 100%;
+    box-shadow: var(--shadow);
+  }
+  .modal-box h3 { color: var(--accent); font-size: 15px; margin-bottom: 12px; }
+  .modal-box label { margin-top: 10px; }
+
+  /* Action bar */
+  .action-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .action-bar .spacer { flex: 1; }
+  .checkbox-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+  .checkbox-line input { cursor: pointer; }
+  @media (max-width: 600px) {
+    .action-bar { gap: 6px; }
+    .action-bar .btn { font-size: 11.5px; padding: 7px 10px; }
+    .action-bar .spacer { display: none; }
+    .action-bar .loading { font-size: 10.5px; padding: 5px 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>🚚 Calculadora de Frete <span class="badge">LTL</span></h1>
+    <div class="sub">Sistema de cálculo de frete fracionado · Base: CKC Transportes / Super ABC</div>
+  </div>
+  <div class="header-meta">
+    <div>Hub: <strong style="color:var(--accent)">Itápolis – SP</strong></div>
+    <div id="dataAtual"></div>
+  </div>
+</div>
+
+<div class="tabs-wrap">
+<div class="tabs">
+  <button class="tab active" data-tab="upload"><span class="tab-full">📤 Upload do Romaneio</span><span class="tab-short">📤 Upload</span></button>
+  <button class="tab" data-tab="pedidos"><span class="tab-full">📋 Pedidos &amp; Cálculo</span><span class="tab-short">📋 Pedidos</span></button>
+  <button class="tab" data-tab="config"><span class="tab-full">⚙️ Configurações da Transportadora</span><span class="tab-short">⚙️ Config</span></button>
+  <button class="tab" data-tab="cidades"><span class="tab-full">🗺️ Base de Cidades</span><span class="tab-short">🗺️ Cidades</span></button>
+  <button class="tab tab-locked" data-tab="analise" id="tabAnalise"><span class="tab-full">🔒 Análise Própria</span><span class="tab-short">🔒 Análise</span></button>
+</div>
+</div>
+
+<!-- ============================================================
+     TAB: UPLOAD
+     ============================================================ -->
+<div class="tab-content active" id="tab-upload">
+  <div class="panel">
+    <div class="panel-title">1. Subir planilha de romaneio</div>
+
+    <div class="drop-zone" id="dropZone">
+      <div class="icon">📂</div>
+      <div class="title">Arraste o arquivo aqui ou clique para selecionar</div>
+      <div class="sub">Formatos aceitos: .xlsx, .xls, .csv · Múltiplos blocos/abas suportados</div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none">
+    </div>
+
+    <div id="uploadStatus"></div>
+
+    <div class="alert info" style="margin-top:12px">
+      <strong>Como funciona:</strong> o sistema reconhece automaticamente os cabeçalhos do romaneio
+      (Cliente, Cidade, N.Pedido, NVTTL/Valor) e cruza com a malha da transportadora ativa.
+      Cidades não atendidas aparecem destacadas para você decidir o que fazer.
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Ou colar dados manualmente</div>
+    <p style="color:var(--text-dim);font-size:12px;margin-bottom:8px">
+      Cole abaixo um trecho do romaneio copiado do Excel (Ctrl+C → Ctrl+V).
+      A primeira linha deve ter os cabeçalhos.
+    </p>
+    <textarea id="pasteArea" rows="6" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-family:'Consolas',monospace;font-size:12px;resize:vertical"
+      placeholder="Cole aqui dados separados por tabulação..."></textarea>
+    <button class="btn btn-primary" style="margin-top:10px" id="btnProcessPaste">Processar texto colado</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     TAB: PEDIDOS
+     ============================================================ -->
+<div class="tab-content" id="tab-pedidos">
+  <div class="panel">
+    <div class="panel-title">2. Pedidos da coleta</div>
+
+    <div id="pedidosEmpty" class="empty">
+      <div class="icon">📋</div>
+      <h3>Nenhum pedido carregado</h3>
+      <p>Volte à aba <strong>Upload</strong> e suba uma planilha de romaneio.</p>
+    </div>
+
+    <div id="pedidosContent" style="display:none">
+
+      <div class="action-bar">
+        <button class="btn btn-small" id="btnRecalc">🔄 Recalcular tudo</button>
+        <button class="btn btn-small" id="btnFillPeso">⚖️ Distribuir peso médio…</button>
+        <button class="btn btn-small" id="btnClearPedidos">🗑️ Limpar pedidos</button>
+        <label class="checkbox-line">
+          <input type="checkbox" id="hideUnmatched">
+          Ocultar não atendidas
+        </label>
+        <div class="spacer"></div>
+        <span class="loading" id="pedidosInfo"></span>
+      </div>
+
+      <div id="pedidosAlerts"></div>
+
+      <div class="pedidos-wrap">
+        <table class="pedidos">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Cidade / Destino</th>
+              <th>Rota</th>
+              <th>Tipo</th>
+              <th>Cliente</th>
+              <th>N.Ped</th>
+              <th>Km</th>
+              <th>Peso (kg)</th>
+              <th>Valor NF (R$)</th>
+              <th>Veículo</th>
+              <th>Frete km</th>
+              <th>Taxa Hub</th>
+              <th>GRIS</th>
+              <th>Pedágio</th>
+              <th>TOTAL</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="pedidosBody"></tbody>
+        </table>
+      </div>
+
+      <div class="totals-grid">
+        <div class="total-card">
+          <div class="label">Qtd. pedidos</div>
+          <div class="value" id="tQtd">0</div>
+        </div>
+        <div class="total-card">
+          <div class="label">Peso total (kg)</div>
+          <div class="value" id="tPeso">0</div>
+        </div>
+        <div class="total-card">
+          <div class="label">Valor NF total</div>
+          <div class="value" id="tNF">R$ 0,00</div>
+        </div>
+        <div class="total-card">
+          <div class="label">Frete por km</div>
+          <div class="value" id="tFreteKm">R$ 0,00</div>
+        </div>
+        <div class="total-card">
+          <div class="label">Taxa Hub</div>
+          <div class="value" id="tHub">R$ 0,00</div>
+        </div>
+        <div class="total-card">
+          <div class="label">GRIS</div>
+          <div class="value" id="tGris">R$ 0,00</div>
+        </div>
+        <div class="total-card">
+          <div class="label">Pedágio</div>
+          <div class="value" id="tPedagio">R$ 0,00</div>
+        </div>
+        <div class="total-card highlight">
+          <div class="label">FATURA TOTAL</div>
+          <div class="value" id="tTotal">R$ 0,00</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     TAB: CONFIG
+     ============================================================ -->
+<div class="tab-content" id="tab-config">
+  <div class="panel">
+    <div class="panel-title">⚙️ Tarifas da transportadora ativa</div>
+
+    <div class="preset-bar">
+      <div>
+        <label>Transportadora ativa</label>
+        <select id="cfgPreset"></select>
+      </div>
+      <button class="btn btn-small" id="btnSavePreset">💾 Salvar como nova</button>
+      <button class="btn btn-small btn-danger" id="btnDelPreset">🗑️ Excluir</button>
+    </div>
+
+    <div class="config-section">
+      <h3>Tarifa por km</h3>
+      <div class="grid-3">
+        <div>
+          <label>Truck (R$ / km)</label>
+          <input type="number" step="0.01" id="cfgTruckKm">
+          <div class="field-hint">Para cargas &gt; limite de peso</div>
+        </div>
+        <div>
+          <label>Fiorino/HR (R$ / km)</label>
+          <input type="number" step="0.01" id="cfgFiorinoKm">
+          <div class="field-hint">Cross-dock para cargas leves</div>
+        </div>
+        <div>
+          <label>Limite de peso Fiorino (kg)</label>
+          <input type="number" step="1" id="cfgLimitePeso">
+          <div class="field-hint">Acima → Truck automático</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="config-section">
+      <h3>Taxa Hub (cross-dock)</h3>
+      <div class="grid-3">
+        <div>
+          <label>Taxa fixa por NF (R$)</label>
+          <input type="number" step="0.01" id="cfgHubFixa">
+          <div class="field-hint">Cobrada por pedido em cross-dock</div>
+        </div>
+        <div>
+          <label>Taxa variável por kg (R$ / kg)</label>
+          <input type="number" step="0.001" id="cfgHubKg">
+          <div class="field-hint">Multiplica pelo peso do pedido</div>
+        </div>
+        <div>
+          <label>GRIS (% sobre NF)</label>
+          <input type="number" step="0.01" id="cfgGris">
+          <div class="field-hint">Ex: 0,08 = 0,08%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="config-section">
+      <h3>Frete mínimo e regras</h3>
+      <div class="grid-3">
+        <div>
+          <label>Frete mínimo SJRP (R$)</label>
+          <input type="number" step="0.01" id="cfgMinSJRP">
+          <div class="field-hint">Mauá → S.J. Rio Preto</div>
+        </div>
+        <div>
+          <label>Km rota principal SJRP</label>
+          <input type="number" step="1" id="cfgKmSJRP">
+          <div class="field-hint">Distância da coleta ao hub final</div>
+        </div>
+        <div>
+          <label>Taxa reentrega (% do frete)</label>
+          <input type="number" step="1" id="cfgReentrega">
+          <div class="field-hint">Informativo (CKC: 60%)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-bar" style="margin-top:18px">
+      <button class="btn btn-primary" id="btnSaveCfg">💾 Salvar configuração</button>
+      <button class="btn" id="btnResetCfg">↺ Restaurar padrão CKC</button>
+      <div class="spacer"></div>
+      <span id="cfgStatus" style="font-size:11px;color:var(--text-mute)"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Base de cidades atendidas pela transportadora</div>
+    <p style="color:var(--text-dim);font-size:12px;margin-bottom:12px">
+      Cole abaixo uma lista de cidades no formato:
+      <code style="background:var(--panel-2);padding:1px 5px;border-radius:3px">Cidade [TAB] Rota [TAB] Km</code>
+      (uma cidade por linha). Use isto para configurar uma transportadora diferente.
+    </p>
+    <textarea id="cidadesBulk" rows="8" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-family:'Consolas',monospace;font-size:12px"
+      placeholder="Araraquara&#9;Truck corredor&#9;70&#10;Bauru&#9;F4&#9;160&#10;..."></textarea>
+    <div class="action-bar" style="margin-top:10px">
+      <button class="btn btn-primary" id="btnApplyCidades">Aplicar lista de cidades</button>
+      <button class="btn" id="btnExportCidades">📋 Copiar lista atual</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     TAB: CIDADES
+     ============================================================ -->
+<div class="tab-content" id="tab-cidades">
+  <div class="panel">
+    <div class="panel-title">🗺️ Cidades atendidas — Mapa de rotas</div>
+    <input type="text" class="search-bar" id="searchCidades" placeholder="🔎 Buscar cidade ou rota..."
+      style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:9px 12px;font-size:13px">
+
+    <div class="cidades-wrap" style="margin-top:12px">
+      <table class="cidades">
+        <thead>
+          <tr>
+            <th>Cidade / Município</th>
+            <th>Rota</th>
+            <th>Região</th>
+            <th style="text-align:right">Km</th>
+            <th>Saída</th>
+          </tr>
+        </thead>
+        <tbody id="cidadesBody"></tbody>
+      </table>
+    </div>
+    <p style="margin-top:10px;color:var(--text-mute);font-size:11px">
+      Km de referência: Itápolis (F1–F5, F7, Truck corredor) ou SJRP (F6, F8).
+    </p>
+  </div>
+</div>
+
+<!-- ============================================================
+     TAB: ANÁLISE PRÓPRIA (PROTEGIDA POR SENHA)
+     ============================================================ -->
+<div class="tab-content" id="tab-analise">
+
+  <!-- Lock screen -->
+  <div id="analiseLock" class="panel" style="text-align:center;padding:50px 24px">
+    <div style="font-size:48px;margin-bottom:14px">🔒</div>
+    <h2 style="color:var(--accent);font-size:18px;margin-bottom:8px;letter-spacing:0.5px">Área Restrita</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:22px;max-width:420px;margin-left:auto;margin-right:auto">
+      Esta área contém os <strong>custos internos da operação</strong> (motorista, caminhão, hora extra) e o comparativo financeiro entre frota própria e terceirização. Acesso por senha.
+    </p>
+    <div style="max-width:280px;margin:0 auto">
+      <input type="password" id="analisePwd" placeholder="Digite a senha" autocomplete="off"
+        style="text-align:center;font-size:15px;letter-spacing:2px">
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary" id="btnAnaliseLogin" style="flex:1">🔓 Entrar</button>
+      </div>
+      <p style="color:var(--text-mute);font-size:10.5px;margin-top:14px">
+        Senha padrão: <code style="background:var(--panel-2);padding:1px 5px;border-radius:3px">senha2026</code> · pode ser alterada após o login
+      </p>
+      <p id="analiseErr" style="color:var(--err);font-size:12px;margin-top:8px;display:none">Senha incorreta</p>
+    </div>
+  </div>
+
+  <!-- Conteúdo principal (oculto até login) -->
+  <div id="analiseContent" style="display:none">
+
+    <div class="panel" style="border-left-color:var(--err)">
+      <div class="action-bar" style="margin-bottom:0">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--accent)">📊 Comparativo: Frota Própria × Transportadora</div>
+          <div style="font-size:11.5px;color:var(--text-dim);margin-top:2px">
+            Base de operação: Av. Guaraciaba, 313 — RP2 — Mauá – SP — 09370-840
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-small" id="btnTrocarSenha">🔑 Trocar senha</button>
+        <button class="btn btn-small btn-danger" id="btnLogout">🚪 Sair</button>
+      </div>
+    </div>
+
+    <!-- CONFIG DE CUSTOS PRÓPRIOS -->
+    <div class="panel">
+      <div class="panel-title">⚙️ Parâmetros de custo da operação própria</div>
+      <p style="font-size:11.5px;color:var(--text-dim);margin-bottom:14px">
+        Fonte: dashboard logístico — médias jan-abr 2026. Edite conforme atualizar a folha ou consumo.
+      </p>
+
+      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:14px;margin-bottom:14px">
+        <h3 style="font-size:11.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;font-weight:700">👷 Custos por motorista (mês)</h3>
+        <div class="grid-4">
+          <div>
+            <label>Salário base (R$)</label>
+            <input type="number" step="0.01" id="cpSalario" value="2763.64">
+          </div>
+          <div>
+            <label>Encargos (R$)</label>
+            <input type="number" step="0.01" id="cpEncargos" value="2485.07">
+            <div class="field-hint">FGTS, INSS, férias, 13º</div>
+          </div>
+          <div>
+            <label>Benefícios (R$)</label>
+            <input type="number" step="0.01" id="cpBeneficios" value="683.80">
+            <div class="field-hint">VR, VT, plano de saúde</div>
+          </div>
+          <div>
+            <label>Hora extra média (R$)</label>
+            <input type="number" step="0.01" id="cpHoraExtra" value="2310.43">
+            <div class="field-hint">Média jan-abr 2026</div>
+          </div>
+        </div>
+        <div class="grid-3" style="margin-top:12px">
+          <div>
+            <label>Nº de motoristas</label>
+            <input type="number" step="1" id="cpQtdMotoristas" value="2">
+            <div class="field-hint">No mesmo caminhão</div>
+          </div>
+          <div>
+            <label>Dias úteis no mês</label>
+            <input type="number" step="1" id="cpDiasUteis" value="22">
+          </div>
+          <div>
+            <label style="color:var(--accent)">Total mensal motoristas</label>
+            <input type="text" id="cpTotalMotoristas" readonly style="color:var(--accent);font-weight:700">
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:14px;margin-bottom:14px">
+        <h3 style="font-size:11.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;font-weight:700">🚛 Custo do caminhão</h3>
+        <div class="grid-3">
+          <div>
+            <label>Custo/km — tabela (R$/km)</label>
+            <input type="number" step="0.01" id="cpCustoKmTabela" value="3.31">
+            <div class="field-hint">Custo operacional base, 1 motorista</div>
+          </div>
+          <div>
+            <label>Custo/km — real (R$/km)</label>
+            <input type="number" step="0.01" id="cpCustoKmReal" value="4.26">
+            <div class="field-hint">2 motoristas + hora extra</div>
+          </div>
+          <div>
+            <label>Km de referência/mês</label>
+            <input type="number" step="100" id="cpKmRef" value="10000">
+            <div class="field-hint">Base de cálculo do custo/km</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:14px">
+        <h3 style="font-size:11.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;font-weight:700">🛣️ Parâmetros desta viagem</h3>
+        <div class="grid-4">
+          <div>
+            <label>Km estimado (ida+volta)</label>
+            <input type="number" step="1" id="cpKmViagem" value="2000">
+            <div class="field-hint">Circuito completo</div>
+          </div>
+          <div>
+            <label>Dias da viagem</label>
+            <input type="number" step="1" id="cpDiasViagem" value="3">
+          </div>
+          <div>
+            <label>Hospedagem (R$)</label>
+            <input type="number" step="0.01" id="cpHospedagem" value="0">
+            <div class="field-hint">Pernoite + alimentação</div>
+          </div>
+          <div>
+            <label>Pedágios (R$)</label>
+            <input type="number" step="0.01" id="cpPedagios" value="0">
+          </div>
+        </div>
+        <div class="grid-3" style="margin-top:12px">
+          <div>
+            <label>Margem alvo (%)</label>
+            <input type="number" step="1" id="cpMargem" value="20">
+            <div class="field-hint">Lucro desejado sobre o custo</div>
+          </div>
+          <div>
+            <label>Imprevistos (%)</label>
+            <input type="number" step="1" id="cpImprev" value="0">
+            <div class="field-hint">Margem de segurança</div>
+          </div>
+          <div></div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="btnCalcAnalise" style="margin-top:14px">🔄 Recalcular análise</button>
+    </div>
+
+    <!-- COMPARATIVO -->
+    <div class="panel">
+      <div class="panel-title">📊 Comparativo desta operação</div>
+
+      <div id="analiseAlert"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" id="analiseGrid">
+
+        <!-- Coluna PRÓPRIA -->
+        <div style="background:#1f2418;border:1px solid #3a4a2a;border-radius:6px;padding:16px">
+          <div style="font-size:11px;color:#9fd99f;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px">Cenário A</div>
+          <div style="font-size:18px;font-weight:700;color:#c8f0a8;margin-bottom:14px">🚛 Frota Própria</div>
+
+          <div class="analise-row"><span>Motoristas (proporção viagem)</span><strong id="apMot">—</strong></div>
+          <div class="analise-row"><span>Custo caminhão (km × tarifa)</span><strong id="apCam">—</strong></div>
+          <div class="analise-row"><span>Hospedagem</span><strong id="apHos">—</strong></div>
+          <div class="analise-row"><span>Pedágios</span><strong id="apPed">—</strong></div>
+          <div class="analise-row total"><span>CUSTO TOTAL</span><strong id="apTot">—</strong></div>
+          <hr style="border:none;border-top:1px solid #3a4a2a;margin:12px 0">
+          <div class="analise-row"><span>Faturamento (NF total)</span><strong id="apFat">—</strong></div>
+          <div class="analise-row"><span>Margem bruta</span><strong id="apMargem">—</strong></div>
+          <div class="analise-row"><span>% margem</span><strong id="apPct">—</strong></div>
+          <div class="analise-row"><span>Custo/km real</span><strong id="apCkm">—</strong></div>
+          <div class="analise-row"><span>Custo/pedido (break-even)</span><strong id="apBe">—</strong></div>
+        </div>
+
+        <!-- Coluna TRANSPORTADORA -->
+        <div style="background:#181f24;border:1px solid #2a3a4a;border-radius:6px;padding:16px">
+          <div style="font-size:11px;color:#9fc1ff;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px">Cenário B</div>
+          <div style="font-size:18px;font-weight:700;color:#a8d0f0;margin-bottom:14px">📋 Transportadora (CKC)</div>
+
+          <div class="analise-row"><span>Frete por km</span><strong id="atFkm">—</strong></div>
+          <div class="analise-row"><span>Taxa Hub</span><strong id="atHub">—</strong></div>
+          <div class="analise-row"><span>GRIS</span><strong id="atGris">—</strong></div>
+          <div class="analise-row"><span>Pedágios</span><strong id="atPed">—</strong></div>
+          <div class="analise-row total"><span>CUSTO TOTAL</span><strong id="atTot">—</strong></div>
+          <hr style="border:none;border-top:1px solid #2a3a4a;margin:12px 0">
+          <div class="analise-row"><span>Faturamento (NF total)</span><strong id="atFat">—</strong></div>
+          <div class="analise-row"><span>Margem bruta</span><strong id="atMargem">—</strong></div>
+          <div class="analise-row"><span>% margem</span><strong id="atPct">—</strong></div>
+          <div class="analise-row"><span>Custo/km efetivo</span><strong id="atCkm">—</strong></div>
+          <div class="analise-row"><span>Custo/pedido (break-even)</span><strong id="atBe">—</strong></div>
+        </div>
+      </div>
+
+      <!-- VEREDITO -->
+      <div id="vereditoBox" style="margin-top:18px;padding:18px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);text-align:center">
+        <div style="font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px">Diferença líquida</div>
+        <div id="vereditoValor" style="font-size:32px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;margin-bottom:6px">R$ 0,00</div>
+        <div id="vereditoTexto" style="font-size:13px;color:var(--text-dim)">Preencha os parâmetros para ver o comparativo</div>
+      </div>
+
+      <!-- Frete sugerido -->
+      <div style="margin-top:14px;padding:14px;background:#241f14;border:1px solid #4a3a1f;border-radius:4px">
+        <div style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px">💡 Frete sugerido (cobertura + margem)</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase">R$/km sugerido</div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent-2)" id="sugRkm">—</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase">Frete total sugerido</div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent-2)" id="sugFrete">—</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase">Mín. por pedido</div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent-2)" id="sugMinPed">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETALHAMENTO POR PEDIDO -->
+    <div class="panel">
+      <div class="panel-title">🎯 Status por pedido — Ponto de equilíbrio</div>
+      <p style="font-size:11.5px;color:var(--text-dim);margin-bottom:12px">
+        <strong style="color:var(--ok)">✅ OK</strong>: pedido acima de 1,5× o mínimo ·
+        <strong style="color:var(--warn)">⚠️ Atenção</strong>: entre 1× e 1,5× ·
+        <strong style="color:var(--err)">🔴 Baixo</strong>: abaixo do mínimo (prejuízo).
+      </p>
+      <div class="pedidos-wrap">
+        <table class="cidades">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Cidade</th>
+              <th>Cliente</th>
+              <th style="text-align:right">Valor NF</th>
+              <th style="text-align:right">vs Mínimo</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="breakEvenBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="footer">
+  CKC Transportes · Calculadora de Frete v1.0 · Dados salvos localmente no seu navegador
+</div>
+
+<!-- Modal: trocar senha -->
+<div class="modal-back" id="modalPwd">
+  <div class="modal-box">
+    <h3>🔑 Trocar senha</h3>
+    <label>Senha atual</label>
+    <input type="password" id="pwdAtual" autocomplete="off">
+    <label>Nova senha</label>
+    <input type="password" id="pwdNova" autocomplete="off">
+    <label>Confirmar nova senha</label>
+    <input type="password" id="pwdConfirma" autocomplete="off">
+    <p id="pwdErro" style="color:var(--err);font-size:12px;margin-top:8px;display:none"></p>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn" id="btnPwdCancelar" style="flex:1">Cancelar</button>
+      <button class="btn btn-primary" id="btnPwdSalvar" style="flex:1">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     SCRIPT — toda a lógica
+     ========================================================================= -->
+<script>
+'use strict';
+
+/* =========================================================================
+   1. BASE DE DADOS — CIDADES (CKC default)
+   ========================================================================= */
+const DEFAULT_CIDADES = [
+  ["Araraquara","Truck corredor","No corredor",70,"Itápolis (desvio)"],
+  ["Catanduva","Truck corredor","No corredor",90,"Itápolis (desvio)"],
+  ["Bebedouro","Truck corredor","No corredor",96,"Itápolis (desvio)"],
+  ["Ibitinga","Truck corredor","No corredor",44,"Itápolis (desvio)"],
+  ["Gavião Peixoto","F1","Araraquara e entorno",25,"Itápolis"],
+  ["Nova Europa","F1","Araraquara e entorno",30,"Itápolis"],
+  ["Tabatinga","F1","Araraquara e entorno",35,"Itápolis"],
+  ["Borborema","F1","Araraquara e entorno",65,"Itápolis"],
+  ["Novo Horizonte","F1","Araraquara e entorno",80,"Itápolis"],
+  ["Pindorama","F2","Catanduva / norte",55,"Itápolis"],
+  ["Santa Adélia","F2","Catanduva / norte",90,"Itápolis"],
+  ["Tabapuã","F2","Catanduva / norte",85,"Itápolis"],
+  ["Irapuã","F2","Catanduva / norte",75,"Itápolis"],
+  ["Urupês","F2","Catanduva / norte",65,"Itápolis"],
+  ["Mendonça","F2","Catanduva / norte",60,"Itápolis"],
+  ["Cajobi","F2","Catanduva / norte",90,"Itápolis"],
+  ["Paraíso","F2","Catanduva / norte",115,"Itápolis"],
+  ["Guaraci","F2","Catanduva / norte",100,"Itápolis"],
+  ["Barretos","F3","Barretos / Bebedouro",130,"Itápolis"],
+  ["Monte Azul Paulista","F3","Barretos / Bebedouro",110,"Itápolis"],
+  ["Severina","F3","Barretos / Bebedouro",95,"Itápolis"],
+  ["Olímpia","F3","Barretos / Bebedouro",100,"Itápolis"],
+  ["Bauru","F4","Bauru / Jaú",160,"Itápolis"],
+  ["Jaú","F4","Bauru / Jaú",95,"Itápolis"],
+  ["Pederneiras","F4","Bauru / Jaú",130,"Itápolis"],
+  ["Itapuí","F4","Bauru / Jaú",135,"Itápolis"],
+  ["Piratininga","F4","Bauru / Jaú",150,"Itápolis"],
+  ["Lençóis Paulista","F4","Bauru / Jaú",145,"Itápolis"],
+  ["Paulistânia","F4","Bauru / Jaú",155,"Itápolis"],
+  ["Espírito Santo do Turvo","F4","Bauru / Jaú",170,"Itápolis"],
+  ["Águas de Santa Bárbara","F4","Bauru / Jaú",180,"Itápolis"],
+  ["Manduri","F4","Bauru / Jaú",190,"Itápolis"],
+  ["Cerqueira César","F4","Bauru / Jaú",185,"Itápolis"],
+  ["Avaré","F4","Bauru / Jaú",210,"Itápolis"],
+  ["Marília","F5","Marília / Garça",105,"Itápolis"],
+  ["Garça","F5","Marília / Garça",100,"Itápolis"],
+  ["Vera Cruz","F5","Marília / Garça",95,"Itápolis"],
+  ["Gália","F5","Marília / Garça",85,"Itápolis"],
+  ["Oriente","F5","Marília / Garça",95,"Itápolis"],
+  ["Pompéia","F5","Marília / Garça",70,"Itápolis"],
+  ["Quintana","F5","Marília / Garça",90,"Itápolis"],
+  ["Herculândia","F5","Marília / Garça",100,"Itápolis"],
+  ["Tupã","F5","Marília / Garça",135,"Itápolis"],
+  ["Lacri","F5","Marília / Garça",110,"Itápolis"],
+  ["Bastos","F5","Marília / Garça",115,"Itápolis"],
+  ["Adamantina","F5","Marília / Garça",195,"Itápolis"],
+  ["Dracena","F5","Marília / Garça",250,"Itápolis"],
+  ["Lucélia","F5","Marília / Garça",215,"Itápolis"],
+  ["São José do Rio Preto","SJRP","Destino final corredor",506,"Mauá"],
+  ["Votuporanga","F6","SJRP e região",95,"SJRP"],
+  ["José Bonifácio","F6","SJRP e região",55,"SJRP"],
+  ["Neves Paulista","F6","SJRP e região",40,"SJRP"],
+  ["Monte Aprazível","F6","SJRP e região",60,"SJRP"],
+  ["Tanabi","F6","SJRP e região",45,"SJRP"],
+  ["Mirassol","F6","SJRP e região",18,"SJRP"],
+  ["Bálsamo","F6","SJRP e região",35,"SJRP"],
+  ["General Salgado","F6","SJRP e região",120,"SJRP"],
+  ["Auriflama","F6","SJRP e região",140,"SJRP"],
+  ["Cardoso","F6","SJRP e região",155,"SJRP"],
+  ["Franca","F7","Franca / Batatais",230,"Itápolis"],
+  ["Batatais","F7","Franca / Batatais",215,"Itápolis"],
+  ["Orlândia","F7","Franca / Batatais",210,"Itápolis"],
+  ["Patrocínio Paulista","F7","Franca / Batatais",230,"Itápolis"],
+  ["São Joaquim da Barra","F7","Franca / Batatais",250,"Itápolis"],
+  ["Guaíra","F7","Franca / Batatais",265,"Itápolis"],
+  ["Igarapava","F7","Franca / Batatais",280,"Itápolis"],
+  ["Jales","F8","Extremo noroeste",210,"SJRP"],
+  ["Fernandópolis","F8","Extremo noroeste",185,"SJRP"],
+  ["Valentim Gentil","F8","Extremo noroeste",115,"SJRP"],
+  ["Santa Fé do Sul","F8","Extremo noroeste",190,"SJRP"],
+  ["Ilha Solteira","F8","Extremo noroeste",195,"SJRP"],
+  ["Palmeira do Oeste","F8","Extremo noroeste",205,"SJRP"]
+];
+
+/* =========================================================================
+   2. CONFIGURAÇÃO PADRÃO (CKC)
+   ========================================================================= */
+const DEFAULT_CONFIG = {
+  truckKm: 7.00,
+  fiorinoKm: 4.00,
+  limitePeso: 500,
+  hubFixa: 15.00,
+  hubKg: 0.02,
+  gris: 0.08,        // % sobre NF
+  minSJRP: 5313,
+  kmSJRP: 506,
+  reentrega: 60      // %
+};
+
+/* =========================================================================
+   3. ESTADO GLOBAL
+   ========================================================================= */
+const state = {
+  pedidos: [],          // array de objetos pedido
+  cidades: [],          // base de cidades ativa
+  cidadeIndex: new Map(), // chave normalizada -> objeto cidade
+  config: { ...DEFAULT_CONFIG },
+  presets: { "CKC Transportes (padrão)": { config: { ...DEFAULT_CONFIG }, cidades: DEFAULT_CIDADES } },
+  activePreset: "CKC Transportes (padrão)",
+  nextId: 1
+};
+
+/* =========================================================================
+   4. PERSISTÊNCIA (localStorage com fallback silencioso)
+   ========================================================================= */
+const STORAGE_KEY = "ckc_frete_calc_v1";
+
+function saveStorage() {
+  try {
+    const data = {
+      presets: state.presets,
+      activePreset: state.activePreset,
+      config: state.config,
+      cidades: state.cidades
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
+  } catch (e) {
+    console.warn("Não foi possível salvar:", e);
+    return false;
+  }
+}
+
+function loadStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (data.presets) state.presets = data.presets;
+    if (data.activePreset) state.activePreset = data.activePreset;
+    if (data.config) state.config = { ...DEFAULT_CONFIG, ...data.config };
+    if (data.cidades && Array.isArray(data.cidades)) state.cidades = data.cidades;
+    return true;
+  } catch (e) {
+    console.warn("Erro ao carregar config salva:", e);
+    return false;
+  }
+}
+
+/* =========================================================================
+   5. NORMALIZAÇÃO DE TEXTO
+   ========================================================================= */
+function normCity(s) {
+  if (s == null) return "";
+  return String(s)
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // remove acentos
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildCidadeIndex() {
+  state.cidadeIndex.clear();
+  state.cidades.forEach(c => {
+    const key = normCity(c[0]);
+    if (key) state.cidadeIndex.set(key, {
+      cidade: c[0], rota: c[1], regiao: c[2], km: Number(c[3]) || 0, saida: c[4]
+    });
+  });
+}
+
+function findCidade(name) {
+  const key = normCity(name);
+  if (!key) return null;
+  // 1. exact match
+  if (state.cidadeIndex.has(key)) return state.cidadeIndex.get(key);
+  // 2. tentativa: remover sufixos comuns "SP", "PAULISTA", etc — só se houver match parcial
+  // 3. substring matching — procurar chave que contenha o nome ou seja contida
+  for (const [k, v] of state.cidadeIndex.entries()) {
+    if (k === key) return v;
+  }
+  // fallback: contém / é contido (cuidado: SAO PAULO vs SAO JOAO)
+  // só aceita se o nome buscado tem 6+ chars (para evitar match de "BAURU" em "BAURU PAULISTA")
+  if (key.length >= 6) {
+    for (const [k, v] of state.cidadeIndex.entries()) {
+      if (k === key) return v;
+      // match exato preferível; só usa parcial se exato falhar
+    }
+  }
+  return null;
+}
+
+/* =========================================================================
+   6. FORMATAÇÃO
+   ========================================================================= */
+function fmtBRL(v) {
+  if (v == null || isNaN(v)) return "R$ 0,00";
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function fmtNum(v, dec = 0) {
+  if (v == null || isNaN(v)) return "0";
+  return Number(v).toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function parseNum(s) {
+  if (s == null) return 0;
+  if (typeof s === "number") return s;
+  // remove R$ e espaços, troca vírgula por ponto
+  const cleaned = String(s).replace(/[R$\s]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? 0 : n;
+}
+
+/* =========================================================================
+   7. PARSER DE ROMANEIO
+   ========================================================================= */
+
+// Aliases conhecidos para cada campo lógico
+const FIELD_ALIASES = {
+  cidade:   ["cidade", "municipio", "município", "destino", "cidade/uf", "cidade destino"],
+  cliente:  ["cliente", "razao social", "razão social", "nome", "destinatario", "destinatário", "fantasia"],
+  numero:   ["n.ped", "n.ped.", "n ped", "n. ped", "pedido", "numero", "número", "n.pedido", "nped", "nro pedido"],
+  valor:    ["nvttl", "valor", "valor nf", "valor pedido", "vl total", "total nf", "vl nf", "valor total"],
+  peso:     ["peso", "peso kg", "peso (kg)", "kg"],
+  volumes:  ["volumes", "qvolume", "vol", "qtd vol"],
+  cep:      ["cep"],
+  endereco: ["endereco", "endereço", "logradouro"]
+};
+
+function detectColumns(headerRow) {
+  // Retorna { cidade: idx, cliente: idx, ... } — null se não encontrou
+  const map = {};
+  const lowered = headerRow.map(h => String(h ?? "").trim().toLowerCase());
+  for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
+    let foundIdx = -1;
+    for (const alias of aliases) {
+      const idx = lowered.indexOf(alias);
+      if (idx !== -1) { foundIdx = idx; break; }
+    }
+    map[field] = foundIdx;
+  }
+  return map;
+}
+
+function isHeaderRow(row) {
+  if (!row || row.length === 0) return false;
+  const first = String(row[0] ?? "").trim().toLowerCase();
+  // cabeçalhos típicos começam com "#" ou contêm "cidade"
+  if (first === "#" || first === "" && row.some(c => /^cidade$/i.test(String(c ?? "").trim()))) return true;
+  // verifica se contém pelo menos 3 nomes de campo conhecidos
+  const lc = row.map(c => String(c ?? "").trim().toLowerCase());
+  let hits = 0;
+  for (const aliases of Object.values(FIELD_ALIASES)) {
+    if (aliases.some(a => lc.includes(a))) hits++;
+  }
+  return hits >= 3;
+}
+
+function isEmptyRow(row) {
+  if (!row || row.length === 0) return true;
+  return row.every(c => c == null || String(c).trim() === "");
+}
+
+function isTotalRow(row) {
+  if (!row || row.length === 0) return false;
+  const s = row.map(c => String(c ?? "").trim().toLowerCase()).join(" ");
+  return /\btotal\b|\bsoma\b|\btotalizad/.test(s);
+}
+
+function parseRows(rows) {
+  /* Entrada: array de arrays (linhas do Excel ou texto colado)
+     Saída: array de pedidos { cidade, cliente, numero, valor, ... } */
+  const result = [];
+  let currentMap = null;
+  let blocks = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (isEmptyRow(row)) continue;
+    if (isTotalRow(row)) continue;
+
+    if (isHeaderRow(row)) {
+      currentMap = detectColumns(row);
+      blocks++;
+      continue;
+    }
+
+    if (!currentMap) continue; // ainda não vimos um cabeçalho
+
+    // Extrair campos
+    const getField = key => {
+      const idx = currentMap[key];
+      if (idx == null || idx < 0 || idx >= row.length) return null;
+      return row[idx];
+    };
+
+    const cidade = String(getField("cidade") ?? "").trim();
+    if (!cidade) continue; // linha sem cidade — não é pedido
+
+    const cliente = String(getField("cliente") ?? "").trim();
+    const numero = String(getField("numero") ?? "").trim();
+    const valor = parseNum(getField("valor"));
+
+    result.push({
+      id: state.nextId++,
+      cidadeRaw: cidade,
+      cliente,
+      numero,
+      valorNF: valor,
+      peso: null,        // o usuário preenche
+      pedagio: 0,
+      // será preenchido em enrichPedido()
+      cidade: null,
+      rota: null,
+      regiao: null,
+      km: null,
+      saida: null,
+      veiculoOverride: null,  // se usuário forçar
+      kmOverride: null,       // se usuário sobrescrever km
+      matched: false
+    });
+  }
+
+  return { pedidos: result, blocks };
+}
+
+function enrichPedido(p) {
+  const match = findCidade(p.cidadeRaw);
+  if (match) {
+    p.cidade = match.cidade;
+    p.rota = match.rota;
+    p.regiao = match.regiao;
+    p.km = match.km;
+    p.saida = match.saida;
+    p.matched = true;
+  } else {
+    p.cidade = p.cidadeRaw;
+    p.rota = "—";
+    p.regiao = "Não atendida";
+    p.km = 0;
+    p.saida = "—";
+    p.matched = false;
+  }
+  return p;
+}
+
+/* =========================================================================
+   8. CÁLCULO DO FRETE
+   ========================================================================= */
+function calcPedido(p) {
+  // Determina veículo
+  const peso = Number(p.peso) || 0;
+  const km = p.kmOverride != null ? Number(p.kmOverride) : (Number(p.km) || 0);
+
+  let veiculo;
+  if (p.veiculoOverride) {
+    veiculo = p.veiculoOverride;
+  } else if (p.rota === "SJRP") {
+    veiculo = "Truck";
+  } else if (p.rota === "Truck corredor") {
+    veiculo = "Truck";
+  } else if (peso > 0 && peso > state.config.limitePeso) {
+    veiculo = "Truck";
+  } else {
+    veiculo = "Fiorino";
+  }
+
+  // Tipo de operação
+  let tipo;
+  if (p.rota === "SJRP") tipo = "SJRP";
+  else if (p.rota === "Truck corredor") tipo = "Corredor";
+  else if (p.rota && p.rota.startsWith("F")) tipo = "Cross-dock";
+  else tipo = "—";
+
+  // Frete por km
+  const tarifa = (veiculo === "Truck") ? state.config.truckKm : state.config.fiorinoKm;
+  let freteKm = km * tarifa;
+
+  // SJRP — frete mínimo
+  if (p.rota === "SJRP" && state.config.minSJRP > freteKm) {
+    freteKm = state.config.minSJRP;
+  }
+
+  // Taxa Hub — só cross-dock (rotas F1-F8) ou Corredor com NF? Pela proposta CKC,
+  // a taxa hub é por NF que passa pelo hub. Truck corredor passa pelo hub? Não,
+  // é desvio no caminho — portanto SEM hub. SJRP também SEM hub.
+  let hub = 0;
+  if (tipo === "Cross-dock") {
+    hub = state.config.hubFixa + state.config.hubKg * peso;
+  }
+
+  // GRIS
+  const gris = (Number(p.valorNF) || 0) * (state.config.gris / 100);
+
+  // Pedágio
+  const pedagio = Number(p.pedagio) || 0;
+
+  const total = freteKm + hub + gris + pedagio;
+
+  return {
+    veiculo,
+    tipo,
+    km,
+    freteKm: roundCents(freteKm),
+    hub: roundCents(hub),
+    gris: roundCents(gris),
+    pedagio: roundCents(pedagio),
+    total: roundCents(total)
+  };
+}
+
+function roundCents(v) {
+  return Math.round((v + Number.EPSILON) * 100) / 100;
+}
+
+/* =========================================================================
+   9. RENDERIZAÇÃO — PEDIDOS
+   ========================================================================= */
+function renderPedidos() {
+  const body = document.getElementById("pedidosBody");
+  const empty = document.getElementById("pedidosEmpty");
+  const content = document.getElementById("pedidosContent");
+
+  if (state.pedidos.length === 0) {
+    empty.style.display = "block";
+    content.style.display = "none";
+    return;
+  }
+  empty.style.display = "none";
+  content.style.display = "block";
+
+  // Agrupar por rota
+  const hideUnmatched = document.getElementById("hideUnmatched").checked;
+  const grupos = new Map();
+  const ordemRotas = ["SJRP", "Truck corredor", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "—"];
+
+  for (const p of state.pedidos) {
+    if (hideUnmatched && !p.matched) continue;
+    const k = p.rota || "—";
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(p);
+  }
+
+  // Ordenar grupos
+  const sortedKeys = Array.from(grupos.keys()).sort((a, b) => {
+    const ia = ordemRotas.indexOf(a);
+    const ib = ordemRotas.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  let html = "";
+  let idxGlobal = 0;
+
+  // Totais gerais
+  let totQtd = 0, totPeso = 0, totNF = 0, totFreteKm = 0, totHub = 0, totGris = 0, totPedagio = 0, totTotal = 0;
+  let unmatchedCount = 0;
+  let freteAltoCount = 0;
+
+  for (const rota of sortedKeys) {
+    const lista = grupos.get(rota);
+    if (!lista || lista.length === 0) continue;
+
+    // Calcular totais da rota
+    let rPeso = 0, rNF = 0, rFreteKm = 0, rHub = 0, rGris = 0, rPedagio = 0, rTotal = 0;
+
+    // Cabeçalho da rota
+    const labelRota = rotaLabel(rota);
+    html += `<tr class="route-header"><td colspan="16">▶ ${labelRota} <span style="color:var(--text-mute);font-weight:400;text-transform:none;letter-spacing:0">— ${lista.length} pedido(s)</span></td></tr>`;
+
+    for (const p of lista) {
+      idxGlobal++;
+      const calc = calcPedido(p);
+      // acumula
+      rPeso += Number(p.peso) || 0;
+      rNF += Number(p.valorNF) || 0;
+      rFreteKm += calc.freteKm;
+      rHub += calc.hub;
+      rGris += calc.gris;
+      rPedagio += calc.pedagio;
+      rTotal += calc.total;
+
+      if (!p.matched) unmatchedCount++;
+
+      // Frete maior que o valor da NF? Só conta se houver valor de NF >0
+      const valorNF = Number(p.valorNF) || 0;
+      const freteAlto = valorNF > 0 && calc.total > valorNF;
+      if (freteAlto) freteAltoCount++;
+
+      const classes = [];
+      if (!p.matched) classes.push("row-unmatched");
+      if (freteAlto) classes.push("row-frete-alto");
+      const rowClass = classes.join(" ");
+      const rotaTag = renderRotaTag(p.rota, p.matched);
+
+      const freteAltoBadge = freteAlto
+        ? `<div class="frete-warn-badge" title="O frete está maior que o valor da nota fiscal — o pedido sai no prejuízo">⚠️ Frete &gt; NF</div>`
+        : "";
+
+      html += `<tr class="${rowClass}" data-id="${p.id}">
+        <td class="m-hide" style="color:var(--text-mute);font-size:11px">${idxGlobal}</td>
+        <td class="col-cidade m-full" data-label="Cidade / Destino">
+          <div style="font-weight:600;font-size:13px">${escapeHtml(p.cidade || p.cidadeRaw)}</div>
+          ${!p.matched ? `<div style="color:var(--err);font-size:10px">⚠ Cidade não encontrada na malha</div>` : ""}
+          ${p.regiao && p.matched ? `<div style="color:var(--text-mute);font-size:10px">${escapeHtml(p.regiao)}</div>` : ""}
+          ${freteAltoBadge}
+        </td>
+        <td data-label="Rota">${rotaTag}</td>
+        <td data-label="Tipo" class="m-hide-tipo"><span class="tag tag-${calc.tipo === 'Cross-dock' ? 'cross' : calc.tipo === 'SJRP' ? 'sjrp' : calc.tipo === 'Corredor' ? 'corridor' : 'unmatched'}">${calc.tipo}</span></td>
+        <td class="m-full" data-label="Cliente" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.cliente)}">${escapeHtml(truncate(p.cliente, 40))}</td>
+        <td data-label="N.Ped" style="font-size:11px;color:var(--text-dim)">${escapeHtml(p.numero)}</td>
+        <td data-label="Km"><input type="number" step="1" class="cell-input" data-field="km" value="${calc.km}" style="width:65px"></td>
+        <td data-label="Peso (kg)"><input type="number" step="0.01" class="cell-input ${!p.peso ? 'warning' : ''}" data-field="peso" value="${p.peso ?? ''}" placeholder="0" style="width:75px"></td>
+        <td data-label="Valor NF (R$)"><input type="number" step="0.01" class="cell-input" data-field="valorNF" value="${p.valorNF ?? ''}" style="width:90px"></td>
+        <td data-label="Veículo">
+          <select class="cell-input" data-field="veiculoOverride">
+            <option value="">${calc.veiculo} (auto)</option>
+            <option value="Truck" ${p.veiculoOverride==='Truck'?'selected':''}>Truck</option>
+            <option value="Fiorino" ${p.veiculoOverride==='Fiorino'?'selected':''}>Fiorino</option>
+          </select>
+        </td>
+        <td class="col-num" data-label="Frete km">${fmtBRL(calc.freteKm)}</td>
+        <td class="col-num" data-label="Taxa Hub">${fmtBRL(calc.hub)}</td>
+        <td class="col-num" data-label="GRIS">${fmtBRL(calc.gris)}</td>
+        <td data-label="Pedágio"><input type="number" step="0.01" class="cell-input" data-field="pedagio" value="${p.pedagio || ''}" placeholder="0" style="width:65px"></td>
+        <td class="col-num-bold m-full" data-label="TOTAL" style="font-size:15px">${fmtBRL(calc.total)}</td>
+        <td class="m-delete"><button class="btn btn-icon btn-danger" data-action="delete" title="Remover pedido">✕</button></td>
+      </tr>`;
+    }
+
+    // Totais da rota
+    html += `<tr class="route-totals">
+      <td colspan="6" class="m-rt-label" style="text-align:right">Subtotal ${labelRota}:</td>
+      <td class="m-skip"></td>
+      <td class="col-num" data-label="Peso">${fmtNum(rPeso, 1)} kg</td>
+      <td class="col-num" data-label="Valor NF">${fmtBRL(rNF)}</td>
+      <td class="m-skip"></td>
+      <td class="col-num" data-label="Frete km">${fmtBRL(rFreteKm)}</td>
+      <td class="col-num" data-label="Taxa Hub">${fmtBRL(rHub)}</td>
+      <td class="col-num" data-label="GRIS">${fmtBRL(rGris)}</td>
+      <td class="col-num" data-label="Pedágio">${fmtBRL(rPedagio)}</td>
+      <td class="col-num-bold" data-label="Total rota">${fmtBRL(rTotal)}</td>
+      <td class="m-skip"></td>
+    </tr>`;
+
+    totQtd += lista.length;
+    totPeso += rPeso;
+    totNF += rNF;
+    totFreteKm += rFreteKm;
+    totHub += rHub;
+    totGris += rGris;
+    totPedagio += rPedagio;
+    totTotal += rTotal;
+  }
+
+  body.innerHTML = html;
+
+  // Atualizar cards
+  document.getElementById("tQtd").textContent = totQtd;
+  document.getElementById("tPeso").textContent = fmtNum(totPeso, 1) + " kg";
+  document.getElementById("tNF").textContent = fmtBRL(totNF);
+  document.getElementById("tFreteKm").textContent = fmtBRL(totFreteKm);
+  document.getElementById("tHub").textContent = fmtBRL(totHub);
+  document.getElementById("tGris").textContent = fmtBRL(totGris);
+  document.getElementById("tPedagio").textContent = fmtBRL(totPedagio);
+  document.getElementById("tTotal").textContent = fmtBRL(totTotal);
+
+  // Info na action-bar
+  const infoBits = [`${state.pedidos.length} pedido(s) total`, `${unmatchedCount} cidade(s) não atendida(s)`];
+  document.getElementById("pedidosInfo").innerHTML = infoBits.join(" · ");
+
+  // Alerts
+  const alertsBox = document.getElementById("pedidosAlerts");
+  alertsBox.innerHTML = "";
+
+  // ALERTA TOPO: frete maior que NF — animado
+  if (freteAltoCount > 0) {
+    const plural = freteAltoCount === 1 ? "pedido" : "pedidos";
+    const verbo = freteAltoCount === 1 ? "está" : "estão";
+    alertsBox.innerHTML += `
+      <div class="alert err" style="display:flex;align-items:center;gap:12px;border-left-width:5px;animation:pulseFreteAlto 1.8s ease-in-out infinite">
+        <span class="frete-warn-counter" style="background:transparent;border-color:transparent;animation:none;padding:0">
+          <span class="icon" style="font-size:24px">🚨</span>
+        </span>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:13px;color:#ffaaaa">${freteAltoCount} ${plural} com FRETE MAIOR que o valor da NF</div>
+          <div style="font-size:11.5px;color:#fbcfcf;margin-top:2px">
+            ${freteAltoCount === 1 ? 'Esse pedido' : 'Esses pedidos'} ${verbo} no <strong>prejuízo</strong> — o custo de entrega supera o que o cliente paga pela mercadoria. Veja as linhas piscando em vermelho abaixo.
+          </div>
+        </div>
+      </div>`;
+  }
+
+  const pesoZero = state.pedidos.filter(p => !p.peso || p.peso <= 0).length;
+  if (pesoZero > 0) {
+    alertsBox.innerHTML += `<div class="alert">⚠ <strong>${pesoZero} pedido(s) sem peso preenchido.</strong> O frete é calculado mesmo assim, mas a Taxa Hub (por kg) e a escolha automática de veículo dependem do peso.</div>`;
+  }
+  if (unmatchedCount > 0) {
+    alertsBox.innerHTML += `<div class="alert err">❌ <strong>${unmatchedCount} cidade(s) não encontrada(s)</strong> na malha da transportadora ativa. Você pode adicioná-las na aba <strong>Configurações</strong> ou removê-las da lista.</div>`;
+  }
+}
+
+function rotaLabel(rota) {
+  const labels = {
+    "SJRP": "ROTA SJRP — Destino final corredor",
+    "Truck corredor": "TRUCK CORREDOR — Entregas no caminho",
+    "F1": "ROTA F1 — Araraquara e entorno",
+    "F2": "ROTA F2 — Catanduva / norte",
+    "F3": "ROTA F3 — Barretos / Bebedouro",
+    "F4": "ROTA F4 — Bauru / Jaú",
+    "F5": "ROTA F5 — Marília / Garça",
+    "F6": "ROTA F6 — SJRP e região",
+    "F7": "ROTA F7 — Franca / Batatais",
+    "F8": "ROTA F8 — Extremo noroeste",
+    "—": "SEM ROTA — Cidades não atendidas"
+  };
+  return labels[rota] || rota;
+}
+
+function renderRotaTag(rota, matched) {
+  if (!matched) return `<span class="tag tag-unmatched">—</span>`;
+  if (rota === "SJRP") return `<span class="tag tag-sjrp">SJRP</span>`;
+  if (rota === "Truck corredor") return `<span class="tag tag-corridor">Corredor</span>`;
+  return `<span class="tag tag-rota">${rota}</span>`;
+}
+
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+function truncate(s, max) {
+  s = String(s ?? "");
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+/* =========================================================================
+  10. EVENTOS DA TABELA — edição inline
+   ========================================================================= */
+document.addEventListener("input", e => {
+  const tgt = e.target;
+  if (!tgt.classList.contains("cell-input")) return;
+  const tr = tgt.closest("tr[data-id]");
+  if (!tr) return;
+  const id = parseInt(tr.dataset.id, 10);
+  const p = state.pedidos.find(x => x.id === id);
+  if (!p) return;
+  const field = tgt.dataset.field;
+  let val = tgt.value;
+  if (field === "veiculoOverride") {
+    p.veiculoOverride = val || null;
+  } else if (field === "km") {
+    p.kmOverride = val === "" ? null : Number(val);
+  } else if (field === "peso") {
+    p.peso = val === "" ? null : Number(val);
+  } else if (field === "valorNF") {
+    p.valorNF = val === "" ? 0 : Number(val);
+  } else if (field === "pedagio") {
+    p.pedagio = val === "" ? 0 : Number(val);
+  }
+  // re-render só os totais não funciona bem; rerender total ok
+  renderPedidos();
+});
+
+document.addEventListener("click", e => {
+  const tgt = e.target;
+  if (tgt.matches('[data-action="delete"]')) {
+    const tr = tgt.closest("tr[data-id]");
+    if (!tr) return;
+    const id = parseInt(tr.dataset.id, 10);
+    state.pedidos = state.pedidos.filter(p => p.id !== id);
+    renderPedidos();
+  }
+});
+
+/* =========================================================================
+  11. UPLOAD / PROCESSAMENTO
+   ========================================================================= */
+async function handleFile(file) {
+  const status = document.getElementById("uploadStatus");
+  status.innerHTML = `<div class="loading">⏳ Lendo ${escapeHtml(file.name)}...</div>`;
+
+  try {
+    const buf = await file.arrayBuffer();
+    let allRows = [];
+
+    if (file.name.toLowerCase().endsWith(".csv")) {
+      const text = new TextDecoder("utf-8").decode(buf);
+      allRows = parseCSV(text);
+    } else {
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      // Concatenar TODAS as sheets, com linha em branco entre elas
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
+        allRows = allRows.concat(rows);
+        allRows.push([]); // separador
+      }
+    }
+
+    const { pedidos, blocks } = parseRows(allRows);
+
+    if (pedidos.length === 0) {
+      status.innerHTML = `<div class="alert err">❌ Nenhum pedido encontrado. Verifique se a planilha tem colunas Cidade, Cliente, Valor (NVTTL) e N.Pedido.</div>`;
+      return;
+    }
+
+    // Enriquecer com base de cidades
+    pedidos.forEach(enrichPedido);
+
+    // Adicionar à lista atual (ou substituir?) — vamos perguntar se já tem dados
+    if (state.pedidos.length > 0) {
+      const ok = confirm(`Já existem ${state.pedidos.length} pedido(s) carregados. Substituir?\n\nOK = Substituir  ·  Cancelar = Adicionar aos existentes`);
+      if (ok) state.pedidos = [];
+    }
+    state.pedidos.push(...pedidos);
+
+    const matched = pedidos.filter(p => p.matched).length;
+    status.innerHTML = `<div class="alert ok">✓ <strong>${pedidos.length} pedido(s)</strong> carregados em ${blocks} bloco(s) · ${matched} cidade(s) reconhecida(s) · ${pedidos.length - matched} não atendida(s)</div>`;
+
+    renderPedidos();
+    setTimeout(() => switchTab("pedidos"), 600);
+
+  } catch (err) {
+    console.error(err);
+    status.innerHTML = `<div class="alert err">❌ Erro ao processar arquivo: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function parseCSV(text) {
+  // CSV simples — suporta ',' e ';', com aspas
+  const rows = [];
+  // detectar separador
+  const firstLine = text.split(/\r?\n/)[0] || "";
+  const sep = (firstLine.split(";").length > firstLine.split(",").length) ? ";" : ",";
+
+  // parser linha-a-linha (simples; não cobre quebras de linha dentro de aspas)
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === "") { rows.push([]); continue; }
+    const cells = [];
+    let cur = "", inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; continue; }
+      if (c === sep && !inQ) { cells.push(cur); cur = ""; continue; }
+      cur += c;
+    }
+    cells.push(cur);
+    rows.push(cells);
+  }
+  return rows;
+}
+
+function parsePastedText(text) {
+  const rows = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === "") { rows.push([]); continue; }
+    // tab > vírgula > ponto-e-vírgula
+    const sep = line.includes("\t") ? "\t" : (line.split(";").length > line.split(",").length ? ";" : ",");
+    rows.push(line.split(sep));
+  }
+  return rows;
+}
+
+/* =========================================================================
+  12. TAB SWITCHING
+   ========================================================================= */
+function switchTab(tabId) {
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
+  document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === "tab-" + tabId));
+  // Garantir que a tab ativa fique visível no scroll horizontal (mobile)
+  const activeTab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+  if (activeTab && activeTab.scrollIntoView) {
+    try { activeTab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }); }
+    catch (e) {}
+  }
+  // Se entrou na análise logado, recalcula com dados atuais
+  if (tabId === "analise" && isLoggedIn()) {
+    try { calcAnalise(); } catch (e) { console.warn(e); }
+  }
+}
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
+
+/* =========================================================================
+  13. CONFIG TAB
+   ========================================================================= */
+function renderConfigForm() {
+  document.getElementById("cfgTruckKm").value = state.config.truckKm;
+  document.getElementById("cfgFiorinoKm").value = state.config.fiorinoKm;
+  document.getElementById("cfgLimitePeso").value = state.config.limitePeso;
+  document.getElementById("cfgHubFixa").value = state.config.hubFixa;
+  document.getElementById("cfgHubKg").value = state.config.hubKg;
+  document.getElementById("cfgGris").value = state.config.gris;
+  document.getElementById("cfgMinSJRP").value = state.config.minSJRP;
+  document.getElementById("cfgKmSJRP").value = state.config.kmSJRP;
+  document.getElementById("cfgReentrega").value = state.config.reentrega;
+
+  // Preset selector
+  const sel = document.getElementById("cfgPreset");
+  sel.innerHTML = "";
+  for (const name of Object.keys(state.presets)) {
+    const opt = document.createElement("option");
+    opt.value = name; opt.textContent = name;
+    if (name === state.activePreset) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function readConfigForm() {
+  state.config.truckKm = parseNum(document.getElementById("cfgTruckKm").value);
+  state.config.fiorinoKm = parseNum(document.getElementById("cfgFiorinoKm").value);
+  state.config.limitePeso = parseNum(document.getElementById("cfgLimitePeso").value);
+  state.config.hubFixa = parseNum(document.getElementById("cfgHubFixa").value);
+  state.config.hubKg = parseNum(document.getElementById("cfgHubKg").value);
+  state.config.gris = parseNum(document.getElementById("cfgGris").value);
+  state.config.minSJRP = parseNum(document.getElementById("cfgMinSJRP").value);
+  state.config.kmSJRP = parseNum(document.getElementById("cfgKmSJRP").value);
+  state.config.reentrega = parseNum(document.getElementById("cfgReentrega").value);
+}
+
+document.getElementById("btnSaveCfg").addEventListener("click", () => {
+  readConfigForm();
+  // Atualizar preset ativo
+  state.presets[state.activePreset] = {
+    config: { ...state.config },
+    cidades: [...state.cidades]
+  };
+  const ok = saveStorage();
+  document.getElementById("cfgStatus").textContent = ok ? "✓ Salvo" : "⚠ Não foi possível salvar (localStorage indisponível)";
+  setTimeout(() => document.getElementById("cfgStatus").textContent = "", 3000);
+  renderPedidos();
+});
+
+document.getElementById("btnResetCfg").addEventListener("click", () => {
+  if (!confirm("Restaurar configuração padrão da CKC? Isso vai sobrescrever os valores atuais.")) return;
+  state.config = { ...DEFAULT_CONFIG };
+  state.cidades = [...DEFAULT_CIDADES];
+  buildCidadeIndex();
+  renderConfigForm();
+  renderCidadesTable();
+  renderPedidos();
+  document.getElementById("cfgStatus").textContent = "✓ Padrão CKC restaurado";
+  setTimeout(() => document.getElementById("cfgStatus").textContent = "", 3000);
+});
+
+document.getElementById("btnSavePreset").addEventListener("click", () => {
+  const name = prompt("Nome da nova configuração (ex: 'Transportadora XYZ'):");
+  if (!name || !name.trim()) return;
+  readConfigForm();
+  state.presets[name.trim()] = {
+    config: { ...state.config },
+    cidades: [...state.cidades]
+  };
+  state.activePreset = name.trim();
+  saveStorage();
+  renderConfigForm();
+});
+
+document.getElementById("btnDelPreset").addEventListener("click", () => {
+  if (Object.keys(state.presets).length <= 1) {
+    alert("Não é possível excluir a única configuração existente.");
+    return;
+  }
+  if (!confirm(`Excluir "${state.activePreset}"?`)) return;
+  delete state.presets[state.activePreset];
+  state.activePreset = Object.keys(state.presets)[0];
+  const p = state.presets[state.activePreset];
+  state.config = { ...DEFAULT_CONFIG, ...p.config };
+  state.cidades = [...p.cidades];
+  buildCidadeIndex();
+  saveStorage();
+  renderConfigForm();
+  renderCidadesTable();
+  renderPedidos();
+});
+
+document.getElementById("cfgPreset").addEventListener("change", e => {
+  const name = e.target.value;
+  if (!state.presets[name]) return;
+  state.activePreset = name;
+  const p = state.presets[name];
+  state.config = { ...DEFAULT_CONFIG, ...p.config };
+  state.cidades = [...p.cidades];
+  buildCidadeIndex();
+  // Re-enriquecer pedidos com a nova malha
+  state.pedidos.forEach(enrichPedido);
+  renderConfigForm();
+  renderCidadesTable();
+  renderPedidos();
+  saveStorage();
+});
+
+document.getElementById("btnApplyCidades").addEventListener("click", () => {
+  const text = document.getElementById("cidadesBulk").value.trim();
+  if (!text) { alert("Cole a lista de cidades primeiro."); return; }
+  const novas = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split(/\t|;/);
+    if (parts.length < 3) continue;
+    const cid = parts[0].trim();
+    const rota = parts[1].trim();
+    const km = parseNum(parts[2]);
+    const regiao = (parts[3] || "").trim();
+    const saida = (parts[4] || "Itápolis").trim();
+    if (!cid || !rota) continue;
+    novas.push([cid, rota, regiao, km, saida]);
+  }
+  if (novas.length === 0) {
+    alert("Não consegui interpretar nenhuma linha. Formato esperado:\nCidade [TAB] Rota [TAB] Km [TAB] Região [TAB] Saída");
+    return;
+  }
+  if (!confirm(`Substituir a base de cidades atual (${state.cidades.length}) por ${novas.length} cidades?`)) return;
+  state.cidades = novas;
+  buildCidadeIndex();
+  state.pedidos.forEach(enrichPedido);
+  renderCidadesTable();
+  renderPedidos();
+  saveStorage();
+  alert(`✓ ${novas.length} cidades aplicadas.`);
+});
+
+document.getElementById("btnExportCidades").addEventListener("click", () => {
+  const text = state.cidades.map(c => c.join("\t")).join("\n");
+  navigator.clipboard.writeText(text).then(() => {
+    alert("✓ Lista copiada para a área de transferência (formato TAB).");
+  }).catch(() => {
+    // fallback
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    alert("✓ Lista copiada.");
+  });
+});
+
+/* =========================================================================
+  14. CIDADES TAB
+   ========================================================================= */
+function renderCidadesTable(filter = "") {
+  const body = document.getElementById("cidadesBody");
+  const f = normCity(filter);
+  let html = "";
+  const sorted = [...state.cidades].sort((a, b) => {
+    if (a[1] !== b[1]) {
+      // ordem das rotas
+      const ord = ["SJRP", "Truck corredor", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"];
+      const ia = ord.indexOf(a[1]); const ib = ord.indexOf(b[1]);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    }
+    return String(a[0]).localeCompare(String(b[0]));
+  });
+  for (const c of sorted) {
+    const nm = normCity(c[0]);
+    const rota = normCity(c[1]);
+    if (f && !nm.includes(f) && !rota.includes(f)) continue;
+    html += `<tr>
+      <td>${escapeHtml(c[0])}</td>
+      <td>${renderRotaTag(c[1], true)}</td>
+      <td style="color:var(--text-dim);font-size:12px">${escapeHtml(c[2] || "")}</td>
+      <td class="col-num">${fmtNum(c[3], 0)}</td>
+      <td style="color:var(--text-dim);font-size:12px">${escapeHtml(c[4] || "")}</td>
+    </tr>`;
+  }
+  body.innerHTML = html || `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-mute)">Nenhum resultado.</td></tr>`;
+}
+
+document.getElementById("searchCidades").addEventListener("input", e => {
+  renderCidadesTable(e.target.value);
+});
+
+/* =========================================================================
+  15. AÇÕES — botões da aba pedidos
+   ========================================================================= */
+document.getElementById("btnRecalc").addEventListener("click", renderPedidos);
+
+document.getElementById("btnFillPeso").addEventListener("click", () => {
+  const pesoTotal = prompt("Peso TOTAL da carga (kg) — será dividido proporcionalmente pelos pedidos sem peso ou por igual entre os que ainda não têm peso?\n\nDigite o peso total:");
+  if (!pesoTotal) return;
+  const total = parseNum(pesoTotal);
+  if (total <= 0) { alert("Peso inválido."); return; }
+  const semPeso = state.pedidos.filter(p => !p.peso || p.peso <= 0);
+  if (semPeso.length === 0) { alert("Todos os pedidos já têm peso."); return; }
+  const distribuir = confirm(`Distribuir ${total} kg entre ${semPeso.length} pedido(s) sem peso?\n\nOK = Distribuir por igual\nCancelar = Distribuir proporcional ao valor da NF`);
+  if (distribuir) {
+    const por = total / semPeso.length;
+    semPeso.forEach(p => p.peso = roundCents(por));
+  } else {
+    const totalNF = semPeso.reduce((s, p) => s + (p.valorNF || 0), 0);
+    if (totalNF <= 0) { alert("Não há valores NF para distribuir proporcionalmente. Será feito por igual.");
+      const por = total / semPeso.length;
+      semPeso.forEach(p => p.peso = roundCents(por));
+    } else {
+      semPeso.forEach(p => p.peso = roundCents(total * (p.valorNF || 0) / totalNF));
+    }
+  }
+  renderPedidos();
+});
+
+document.getElementById("btnClearPedidos").addEventListener("click", () => {
+  if (!confirm("Limpar todos os pedidos?")) return;
+  state.pedidos = [];
+  renderPedidos();
+});
+
+document.getElementById("hideUnmatched").addEventListener("change", renderPedidos);
+
+/* =========================================================================
+  16. DROP ZONE
+   ========================================================================= */
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+
+dropZone.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+  if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+["dragenter", "dragover"].forEach(ev => {
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add("dragover"); });
+});
+["dragleave", "drop"].forEach(ev => {
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove("dragover"); });
+});
+dropZone.addEventListener("drop", e => {
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+
+document.getElementById("btnProcessPaste").addEventListener("click", () => {
+  const text = document.getElementById("pasteArea").value;
+  if (!text.trim()) { alert("Cole algum dado primeiro."); return; }
+  try {
+    const rows = parsePastedText(text);
+    const { pedidos, blocks } = parseRows(rows);
+    if (pedidos.length === 0) {
+      alert("Nenhum pedido reconhecido. A primeira linha precisa ter cabeçalhos como 'Cidade', 'Cliente', 'NVTTL' ou 'Valor'.");
+      return;
+    }
+    pedidos.forEach(enrichPedido);
+    if (state.pedidos.length > 0) {
+      if (!confirm(`Adicionar ${pedidos.length} pedido(s) aos ${state.pedidos.length} já existentes?`)) return;
+    }
+    state.pedidos.push(...pedidos);
+    renderPedidos();
+    switchTab("pedidos");
+  } catch (err) {
+    console.error(err);
+    alert("Erro ao processar texto: " + err.message);
+  }
+});
+
+/* =========================================================================
+  17. ANÁLISE PRÓPRIA — senha + comparativo
+   ========================================================================= */
+
+/* Hash simples (não é segurança forte — é só para não guardar senha plain text
+   no localStorage. Quem inspecionar o DevTools consegue ver tudo igual; o objetivo
+   é só evitar curiosos casuais.) */
+function pwdHash(s) {
+  let h = 5381;
+  s = String(s || "");
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return "h_" + (h >>> 0).toString(36) + "_" + s.length;
+}
+
+const ANALISE_KEY = "ckc_analise_v1";
+const SESSION_KEY = "ckc_analise_session";
+const DEFAULT_PWD = "senha2026";
+
+function getStoredPwd() {
+  try {
+    const v = localStorage.getItem(ANALISE_KEY);
+    if (v) {
+      // Migração: se ainda estiver com a senha antiga "ckc2026", atualiza para a nova
+      if (v === pwdHash("ckc2026")) {
+        const novo = pwdHash(DEFAULT_PWD);
+        try { localStorage.setItem(ANALISE_KEY, novo); } catch (e) {}
+        return novo;
+      }
+      return v;
+    }
+  } catch (e) {}
+  return pwdHash(DEFAULT_PWD);
+}
+function setStoredPwd(pwd) {
+  try { localStorage.setItem(ANALISE_KEY, pwdHash(pwd)); return true; }
+  catch (e) { return false; }
+}
+
+function isLoggedIn() {
+  try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch (e) { return false; }
+}
+function setLogin(yes) {
+  try {
+    if (yes) sessionStorage.setItem(SESSION_KEY, "1");
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+}
+
+function showAnaliseContent() {
+  document.getElementById("analiseLock").style.display = "none";
+  document.getElementById("analiseContent").style.display = "block";
+  document.getElementById("tabAnalise").classList.add("unlocked");
+  document.getElementById("tabAnalise").querySelector(".tab-full").textContent = "💼 Análise Própria";
+  document.getElementById("tabAnalise").querySelector(".tab-short").textContent = "💼 Análise";
+  calcAnalise();
+}
+
+function showAnaliseLock() {
+  document.getElementById("analiseLock").style.display = "block";
+  document.getElementById("analiseContent").style.display = "none";
+  document.getElementById("tabAnalise").classList.remove("unlocked");
+  document.getElementById("tabAnalise").querySelector(".tab-full").textContent = "🔒 Análise Própria";
+  document.getElementById("tabAnalise").querySelector(".tab-short").textContent = "🔒 Análise";
+}
+
+document.getElementById("btnAnaliseLogin").addEventListener("click", () => {
+  const pwd = document.getElementById("analisePwd").value;
+  if (pwdHash(pwd) === getStoredPwd()) {
+    setLogin(true);
+    document.getElementById("analiseErr").style.display = "none";
+    document.getElementById("analisePwd").value = "";
+    showAnaliseContent();
+  } else {
+    document.getElementById("analiseErr").style.display = "block";
+    document.getElementById("analiseErr").textContent = "Senha incorreta";
+  }
+});
+document.getElementById("analisePwd").addEventListener("keyup", e => {
+  if (e.key === "Enter") document.getElementById("btnAnaliseLogin").click();
+});
+
+document.getElementById("btnLogout").addEventListener("click", () => {
+  setLogin(false);
+  showAnaliseLock();
+});
+
+/* Modal trocar senha */
+document.getElementById("btnTrocarSenha").addEventListener("click", () => {
+  document.getElementById("pwdAtual").value = "";
+  document.getElementById("pwdNova").value = "";
+  document.getElementById("pwdConfirma").value = "";
+  document.getElementById("pwdErro").style.display = "none";
+  document.getElementById("modalPwd").classList.add("show");
+});
+document.getElementById("btnPwdCancelar").addEventListener("click", () => {
+  document.getElementById("modalPwd").classList.remove("show");
+});
+document.getElementById("btnPwdSalvar").addEventListener("click", () => {
+  const atual = document.getElementById("pwdAtual").value;
+  const nova = document.getElementById("pwdNova").value;
+  const conf = document.getElementById("pwdConfirma").value;
+  const erro = document.getElementById("pwdErro");
+  erro.style.display = "none";
+  if (pwdHash(atual) !== getStoredPwd()) {
+    erro.textContent = "Senha atual incorreta.";
+    erro.style.display = "block"; return;
+  }
+  if (!nova || nova.length < 4) {
+    erro.textContent = "Nova senha precisa ter pelo menos 4 caracteres.";
+    erro.style.display = "block"; return;
+  }
+  if (nova !== conf) {
+    erro.textContent = "A confirmação não bate com a nova senha.";
+    erro.style.display = "block"; return;
+  }
+  setStoredPwd(nova);
+  document.getElementById("modalPwd").classList.remove("show");
+  alert("✓ Senha alterada com sucesso.");
+});
+document.getElementById("modalPwd").addEventListener("click", e => {
+  if (e.target.id === "modalPwd") {
+    document.getElementById("modalPwd").classList.remove("show");
+  }
+});
+
+/* ===== Cálculo da análise ===== */
+function readAnaliseInputs() {
+  return {
+    salario:    parseNum(document.getElementById("cpSalario").value),
+    encargos:   parseNum(document.getElementById("cpEncargos").value),
+    beneficios: parseNum(document.getElementById("cpBeneficios").value),
+    horaExtra:  parseNum(document.getElementById("cpHoraExtra").value),
+    qtdMot:     Math.max(1, parseInt(document.getElementById("cpQtdMotoristas").value) || 1),
+    diasUteis:  Math.max(1, parseInt(document.getElementById("cpDiasUteis").value) || 22),
+    custoKmTab: parseNum(document.getElementById("cpCustoKmTabela").value),
+    custoKmReal:parseNum(document.getElementById("cpCustoKmReal").value),
+    kmRef:      Math.max(1, parseNum(document.getElementById("cpKmRef").value)),
+    kmViagem:   parseNum(document.getElementById("cpKmViagem").value),
+    diasViagem: Math.max(1, parseInt(document.getElementById("cpDiasViagem").value) || 1),
+    hospedagem: parseNum(document.getElementById("cpHospedagem").value),
+    pedagiosP:  parseNum(document.getElementById("cpPedagios").value),
+    margem:     parseNum(document.getElementById("cpMargem").value),
+    imprev:     parseNum(document.getElementById("cpImprev").value)
+  };
+}
+
+function calcAnalise() {
+  const i = readAnaliseInputs();
+
+  // ===== Mensal por motorista =====
+  const totalMensalMot = i.salario + i.encargos + i.beneficios + i.horaExtra;
+  document.getElementById("cpTotalMotoristas").value = fmtBRL(totalMensalMot * i.qtdMot);
+
+  // ===== Cenário A — Própria =====
+  // Motoristas: proporção da viagem nos dias úteis × qtd motoristas
+  const custoMotViagem = (totalMensalMot / i.diasUteis) * i.diasViagem * i.qtdMot;
+  const custoCaminhao = i.kmViagem * i.custoKmReal;
+  const custoPropTotal = custoMotViagem + custoCaminhao + i.hospedagem + i.pedagiosP;
+  const custoPropImprev = custoPropTotal * (1 + i.imprev/100);
+
+  // ===== Faturamento (vem da aba Pedidos) =====
+  const totalNF = state.pedidos.reduce((s, p) => s + (Number(p.valorNF) || 0), 0);
+  const qtdPedidos = state.pedidos.length;
+
+  // ===== Cenário B — Transportadora (totais já calculados no renderPedidos) =====
+  let totFreteKm = 0, totHub = 0, totGris = 0, totPedagio = 0;
+  for (const p of state.pedidos) {
+    const c = calcPedido(p);
+    totFreteKm += c.freteKm;
+    totHub += c.hub;
+    totGris += c.gris;
+    totPedagio += c.pedagio;
+  }
+  const custoTranspTotal = totFreteKm + totHub + totGris + totPedagio;
+
+  // ===== Margens =====
+  const margemPropria = totalNF - custoPropImprev;
+  const margemTransp = totalNF - custoTranspTotal;
+  const pctPropria = totalNF > 0 ? (margemPropria / totalNF * 100) : 0;
+  const pctTransp = totalNF > 0 ? (margemTransp / totalNF * 100) : 0;
+
+  // ===== Custo/km =====
+  const propCkm = i.kmViagem > 0 ? custoPropImprev / i.kmViagem : 0;
+  const transpCkm = i.kmViagem > 0 ? custoTranspTotal / i.kmViagem : 0;
+
+  // ===== Break-even por pedido =====
+  const propBe = qtdPedidos > 0 ? custoPropImprev / qtdPedidos : 0;
+  const transpBe = qtdPedidos > 0 ? custoTranspTotal / qtdPedidos : 0;
+
+  // ===== Frete sugerido =====
+  const sugRkm = i.custoKmReal * (1 + i.margem/100);
+  const sugFrete = sugRkm * i.kmViagem;
+  const sugMinPed = qtdPedidos > 0 ? (custoPropImprev * (1 + i.margem/100)) / qtdPedidos : 0;
+
+  // ===== Renderizar =====
+  document.getElementById("apMot").textContent = fmtBRL(custoMotViagem);
+  document.getElementById("apCam").textContent = `${fmtBRL(custoCaminhao)} (${fmtNum(i.kmViagem,0)} × R$ ${fmtNum(i.custoKmReal,2)})`;
+  document.getElementById("apHos").textContent = fmtBRL(i.hospedagem);
+  document.getElementById("apPed").textContent = fmtBRL(i.pedagiosP);
+  document.getElementById("apTot").textContent = fmtBRL(custoPropImprev);
+  document.getElementById("apFat").textContent = fmtBRL(totalNF);
+  document.getElementById("apMargem").textContent = fmtBRL(margemPropria);
+  document.getElementById("apPct").textContent = fmtNum(pctPropria, 1) + "%";
+  document.getElementById("apCkm").textContent = "R$ " + fmtNum(propCkm, 2) + "/km";
+  document.getElementById("apBe").textContent = fmtBRL(propBe);
+
+  document.getElementById("atFkm").textContent = fmtBRL(totFreteKm);
+  document.getElementById("atHub").textContent = fmtBRL(totHub);
+  document.getElementById("atGris").textContent = fmtBRL(totGris);
+  document.getElementById("atPed").textContent = fmtBRL(totPedagio);
+  document.getElementById("atTot").textContent = fmtBRL(custoTranspTotal);
+  document.getElementById("atFat").textContent = fmtBRL(totalNF);
+  document.getElementById("atMargem").textContent = fmtBRL(margemTransp);
+  document.getElementById("atPct").textContent = fmtNum(pctTransp, 1) + "%";
+  document.getElementById("atCkm").textContent = "R$ " + fmtNum(transpCkm, 2) + "/km";
+  document.getElementById("atBe").textContent = fmtBRL(transpBe);
+
+  // Veredito
+  const diff = margemPropria - margemTransp;  // se positivo: própria gera mais margem
+  const valorEl = document.getElementById("vereditoValor");
+  const textoEl = document.getElementById("vereditoTexto");
+  if (qtdPedidos === 0) {
+    valorEl.textContent = "—";
+    valorEl.style.color = "var(--text-mute)";
+    textoEl.textContent = "Faça upload de um romaneio na aba Pedidos para ver o comparativo.";
+  } else if (Math.abs(diff) < 1) {
+    valorEl.textContent = fmtBRL(0);
+    valorEl.style.color = "var(--accent)";
+    textoEl.textContent = "Os dois cenários têm margens praticamente iguais.";
+  } else if (diff > 0) {
+    valorEl.textContent = "+ " + fmtBRL(diff);
+    valorEl.style.color = "var(--ok)";
+    textoEl.innerHTML = `<strong style="color:var(--ok)">🚛 Frota própria sai melhor</strong> para esta operação — sobra ${fmtBRL(diff)} a mais de margem.`;
+  } else {
+    valorEl.textContent = fmtBRL(diff);
+    valorEl.style.color = "var(--err)";
+    textoEl.innerHTML = `<strong style="color:var(--accent-2)">📋 Transportadora sai melhor</strong> para esta operação — economiza ${fmtBRL(Math.abs(diff))} em comparação ao custo próprio.`;
+  }
+
+  document.getElementById("sugRkm").textContent = "R$ " + fmtNum(sugRkm, 2);
+  document.getElementById("sugFrete").textContent = fmtBRL(sugFrete);
+  document.getElementById("sugMinPed").textContent = fmtBRL(sugMinPed);
+
+  // Alerts
+  const alertBox = document.getElementById("analiseAlert");
+  if (qtdPedidos === 0) {
+    alertBox.innerHTML = `<div class="alert">⚠ Nenhum pedido carregado. Faça upload de um romaneio para que o comparativo use o faturamento real.</div>`;
+  } else {
+    alertBox.innerHTML = `<div class="alert info">📊 Comparando <strong>${qtdPedidos} pedidos</strong> · faturamento <strong>${fmtBRL(totalNF)}</strong> · ${fmtNum(i.kmViagem,0)} km · ${i.diasViagem} dia(s).</div>`;
+  }
+
+  // Break-even por pedido
+  renderBreakEven(propBe, sugMinPed);
+}
+
+function renderBreakEven(beMinimo, beSugerido) {
+  const body = document.getElementById("breakEvenBody");
+  if (state.pedidos.length === 0) {
+    body.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-mute)">Sem pedidos para analisar.</td></tr>`;
+    return;
+  }
+  let html = "";
+  const sorted = [...state.pedidos].sort((a, b) => (Number(a.valorNF)||0) - (Number(b.valorNF)||0));
+  sorted.forEach((p, idx) => {
+    const v = Number(p.valorNF) || 0;
+    const ratio = beMinimo > 0 ? v / beMinimo : 0;
+    let cls, lbl;
+    if (v === 0) { cls = "status-bad"; lbl = "—"; }
+    else if (ratio >= 1.5) { cls = "status-ok"; lbl = "✅ OK"; }
+    else if (ratio >= 1) { cls = "status-warn"; lbl = "⚠️ Atenção"; }
+    else { cls = "status-bad"; lbl = "🔴 Baixo"; }
+
+    html += `<tr>
+      <td style="color:var(--text-mute);font-size:11px">${idx+1}</td>
+      <td>${escapeHtml(p.cidade || p.cidadeRaw)}</td>
+      <td style="font-size:11px;color:var(--text-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.cliente)}">${escapeHtml(truncate(p.cliente, 35))}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtBRL(v)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${ratio > 0 ? fmtNum(ratio, 2) + "×" : "—"}</td>
+      <td><span class="${cls}">${lbl}</span></td>
+    </tr>`;
+  });
+  body.innerHTML = html;
+}
+
+// Botão recalcular
+document.getElementById("btnCalcAnalise").addEventListener("click", calcAnalise);
+
+// Auto-recalcular ao mudar qualquer input
+["cpSalario","cpEncargos","cpBeneficios","cpHoraExtra","cpQtdMotoristas","cpDiasUteis",
+ "cpCustoKmTabela","cpCustoKmReal","cpKmRef","cpKmViagem","cpDiasViagem","cpHospedagem",
+ "cpPedagios","cpMargem","cpImprev"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => {
+    // debounce simples
+    clearTimeout(window._analiseT);
+    window._analiseT = setTimeout(calcAnalise, 200);
+    // salvar inputs no storage
+    saveAnaliseInputs();
+  });
+});
+
+function saveAnaliseInputs() {
+  try {
+    const data = {};
+    ["cpSalario","cpEncargos","cpBeneficios","cpHoraExtra","cpQtdMotoristas","cpDiasUteis",
+     "cpCustoKmTabela","cpCustoKmReal","cpKmRef","cpKmViagem","cpDiasViagem","cpHospedagem",
+     "cpPedagios","cpMargem","cpImprev"].forEach(id => {
+      data[id] = document.getElementById(id).value;
+    });
+    localStorage.setItem("ckc_analise_inputs", JSON.stringify(data));
+  } catch (e) {}
+}
+function loadAnaliseInputs() {
+  try {
+    const raw = localStorage.getItem("ckc_analise_inputs");
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    for (const [id, val] of Object.entries(data)) {
+      const el = document.getElementById(id);
+      if (el && val != null && val !== "") el.value = val;
+    }
+  } catch (e) {}
+}
+
+
+function init() {
+  // Tentar carregar config salva
+  loadStorage();
+
+  // Se não tem cidades, usar default
+  if (!state.cidades || state.cidades.length === 0) {
+    state.cidades = [...DEFAULT_CIDADES];
+  }
+  buildCidadeIndex();
+
+  // Garantir que o preset CKC existe
+  if (!state.presets["CKC Transportes (padrão)"]) {
+    state.presets["CKC Transportes (padrão)"] = {
+      config: { ...DEFAULT_CONFIG },
+      cidades: [...DEFAULT_CIDADES]
+    };
+  }
+
+  // Data atual
+  const now = new Date();
+  document.getElementById("dataAtual").textContent =
+    now.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+
+  renderConfigForm();
+  renderCidadesTable();
+  renderPedidos();
+
+  // Análise: carregar inputs salvos e mostrar/ocultar conforme login
+  loadAnaliseInputs();
+  if (isLoggedIn()) {
+    showAnaliseContent();
+  } else {
+    showAnaliseLock();
+  }
+}
+
+init();
+</script>
+</body>
+</html>
