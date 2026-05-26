@@ -2809,10 +2809,21 @@ function gerarPdfOrcamento() {
   const dataStr = hoje.toLocaleDateString("pt-BR");
   const numeroOrc = `ORC-${hoje.getFullYear()}${String(hoje.getMonth()+1).padStart(2,"0")}${String(hoje.getDate()).padStart(2,"0")}-${String(hoje.getHours()).padStart(2,"0")}${String(hoje.getMinutes()).padStart(2,"0")}`;
 
-  // Agrupar pedidos por rota
-  const ordemRotas = ["SJRP", "Truck corredor", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "—"];
+  // ===== Filtrar APENAS pedidos atendidos pela transportadora =====
+  // O orçamento que vai pra ela tem que conter só o que ela cobra.
+  // Cidades não atendidas viram apenas nota de rodapé.
+  const pedidosAtendidos = state.pedidos.filter(p => p.matched);
+  const pedidosNaoAtendidos = state.pedidos.filter(p => !p.matched);
+
+  if (pedidosAtendidos.length === 0) {
+    alert("Não há pedidos de cidades atendidas pela transportadora.\n\nVerifique se a malha de cidades está configurada corretamente na aba ⚙️ Configurações.");
+    return;
+  }
+
+  // Agrupar pedidos por rota (só atendidos)
+  const ordemRotas = ["SJRP", "Truck corredor", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"];
   const grupos = new Map();
-  for (const p of state.pedidos) {
+  for (const p of pedidosAtendidos) {
     const k = p.rota || "—";
     if (!grupos.has(k)) grupos.set(k, []);
     grupos.get(k).push(p);
@@ -2823,12 +2834,20 @@ function gerarPdfOrcamento() {
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
 
-  // Calcular totais
+  // Calcular totais (só atendidos)
   let totQtd = 0, totPeso = 0, totNF = 0, totFreteKm = 0, totHub = 0, totGris = 0, totPedagio = 0, totTotal = 0;
   const cidadesKmUnicas = new Map();
   const cidadesUnicas = new Set();
-  let unmatched = 0;
-  for (const p of state.pedidos) {
+  // Totais "ocultos" das cidades não atendidas (só pra mostrar na nota de rodapé)
+  let unmatchedQtd = pedidosNaoAtendidos.length;
+  let unmatchedNF = 0;
+  const unmatchedCidades = new Set();
+  pedidosNaoAtendidos.forEach(p => {
+    unmatchedNF += Number(p.valorNF) || 0;
+    unmatchedCidades.add(p.cidade || p.cidadeRaw);
+  });
+
+  for (const p of pedidosAtendidos) {
     const c = calcPedido(p);
     totQtd++;
     totPeso += Number(p.peso) || 0;
@@ -2838,16 +2857,12 @@ function gerarPdfOrcamento() {
     totGris += c.gris;
     totPedagio += c.pedagio;
     totTotal += c.total;
-    if (p.matched) {
-      const chave = normCity(p.cidade) + "|" + (p.rota || "");
-      if (!cidadesKmUnicas.has(chave)) {
-        const kmEf = p.kmOverride != null ? Number(p.kmOverride) : (Number(p.km) || 0);
-        cidadesKmUnicas.set(chave, kmEf);
-      }
-      cidadesUnicas.add(normCity(p.cidade));
-    } else {
-      unmatched++;
+    const chave = normCity(p.cidade) + "|" + (p.rota || "");
+    if (!cidadesKmUnicas.has(chave)) {
+      const kmEf = p.kmOverride != null ? Number(p.kmOverride) : (Number(p.km) || 0);
+      cidadesKmUnicas.set(chave, kmEf);
     }
+    cidadesUnicas.add(normCity(p.cidade));
   }
   let totKm = 0;
   cidadesKmUnicas.forEach(km => totKm += km);
@@ -2944,7 +2959,7 @@ function gerarPdfOrcamento() {
   const cardW = (pageW - 2*margem - 9) / 4;
   const cardH = 18;
   const cards = [
-    { lbl: "PEDIDOS", val: String(totQtd), sub: unmatched > 0 ? `${unmatched} não atendid.` : "todos atendidos" },
+    { lbl: "PEDIDOS", val: String(totQtd), sub: unmatchedQtd > 0 ? `+${unmatchedQtd} fora do orçamento` : "todos atendidos" },
     { lbl: "CIDADES", val: String(cidadesUnicas.size), sub: "destinos únicos" },
     { lbl: "KM TOTAL", val: fmtNum(totKm, 0) + " km", sub: "rota das atendidas" },
     { lbl: "FATURAMENTO", val: fmtBRL(totNF), sub: "valor das NFs" }
@@ -3199,23 +3214,58 @@ function gerarPdfOrcamento() {
   });
   y = doc.lastAutoTable.finalY + 6;
 
-  // Aviso de cidades não atendidas (se houver)
-  if (unmatched > 0) {
-    if (y > pageH - 30) { doc.addPage(); addFooter(doc, pageW, pageH, margem); y = 20; }
-    doc.setFillColor(255, 245, 230);
-    doc.rect(margem, y, pageW - 2*margem, 14, "F");
+  // Nota: cidades excluídas do orçamento (não atendidas pela transportadora)
+  if (unmatchedQtd > 0) {
+    // Lista de cidades, limitada para não estourar
+    const listaCidades = Array.from(unmatchedCidades).slice(0, 10).join(", ");
+    const sobra = unmatchedCidades.size > 10 ? ` e mais ${unmatchedCidades.size - 10}` : "";
+
+    const larguraTexto = pageW - 2*margem - 8;
+    const linha1 = `Este orçamento cobre apenas as cidades atendidas pela ${transportadora}. ` +
+                   `${unmatchedQtd} pedido(s) (${fmtBRL(unmatchedNF)} em NFs) ficaram fora por estarem ` +
+                   `em cidades fora da malha atual.`;
+    const linha2 = `Cidades excluídas: ${listaCidades}${sobra}.`;
+
+    doc.setFontSize(7.5);
+    const linhasQuebradas1 = doc.splitTextToSize(linha1, larguraTexto);
+    doc.setFontSize(7);
+    const linhasQuebradas2 = doc.splitTextToSize(linha2, larguraTexto);
+
+    // Altura: título(6) + linhas1 (3.5 cada) + linhas2 (3.2 cada) + paddings
+    const alturaBloco = 6 + (linhasQuebradas1.length * 3.5) + (linhasQuebradas2.length * 3.2) + 6;
+
+    if (y > pageH - (alturaBloco + 12)) { doc.addPage(); addFooter(doc, pageW, pageH, margem); y = 20; }
+
+    doc.setFillColor(252, 245, 230);
+    doc.rect(margem, y, pageW - 2*margem, alturaBloco, "F");
     doc.setDrawColor(...VERMELHO);
     doc.setLineWidth(0.8);
-    doc.line(margem, y, margem, y + 14);
+    doc.line(margem, y, margem, y + alturaBloco);
+
+    let yCursor = y + 5.5;
     doc.setTextColor(...VERMELHO);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
-    doc.text("! ATENCAO", margem + 4, y + 5);
+    doc.text("NOTA - PEDIDOS EXCLUIDOS DO ORCAMENTO", margem + 4, yCursor);
+    yCursor += 5;
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(...CINZA_ESCURO);
-    doc.text(`${unmatched} pedido(s) com cidades fora da malha atual da transportadora - verificar atendimento antes do fechamento.`, margem + 4, y + 11);
-    y += 18;
+    linhasQuebradas1.forEach(ln => {
+      doc.text(ln, margem + 4, yCursor);
+      yCursor += 3.5;
+    });
+    yCursor += 1;
+
+    doc.setFontSize(7);
+    doc.setTextColor(100, 100, 100);
+    linhasQuebradas2.forEach(ln => {
+      doc.text(ln, margem + 4, yCursor);
+      yCursor += 3.2;
+    });
+
+    y += alturaBloco + 4;
   }
 
   // ============ RODAPÉ FINAL DA ÚLTIMA PÁGINA ============
@@ -4066,21 +4116,48 @@ function renderMapaViagem(pedidosLista) {
       className: "", iconSize: [size, size], iconAnchor: [size/2, size/2]
     });
 
-    // Popup
-    let popup = `<div style="min-width:180px"><strong>${escapeHtml(info.cidade)}</strong><br>`;
-    popup += `<span style="color:#666;font-size:11px">${info.matched ? `Rota ${info.rota}` : "⚠ Não atendida"}</span><br><br>`;
-    popup += `<strong>${info.pedidos.length}</strong> pedido(s) · <strong>${fmtBRL(fat)}</strong><br>`;
-    if (temFreteAlto) popup += `<span style="color:#c00;font-size:11px">⚠ Frete maior que NF em algum pedido</span><br>`;
-    popup += `<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">`;
-    info.pedidos.slice(0, 5).forEach(p => {
-      popup += `<div style="font-size:11px;color:#333">#${escapeHtml(p.numero || "-")} · ${escapeHtml(truncate(p.cliente, 24))} · ${fmtBRL(Number(p.valorNF)||0)}</div>`;
-    });
-    if (info.pedidos.length > 5) popup += `<div style="font-size:10px;color:#888;margin-top:3px">…e mais ${info.pedidos.length - 5} pedido(s)</div>`;
-    popup += `</div>`;
+    // Popup — lista completa com scroll se necessário
+    const linhasPedidos = info.pedidos.map(p => {
+      const c = calcPedido(p);
+      const vNF = Number(p.valorNF) || 0;
+      const ehAlto = vNF > 0 && c.total > vNF;
+      const corNF = ehAlto ? "#c00" : "#1a1a1a";
+      const bgRow = ehAlto ? "#fff5f5" : "transparent";
+      const aviso = ehAlto ? ` <span style="color:#c00;font-weight:700;font-size:9.5px">⚠ frete &gt; NF</span>` : "";
+      return `<div style="padding:5px 6px;border-bottom:1px solid #eee;background:${bgRow};font-size:11px;color:#333">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+          <strong style="font-size:11px">#${escapeHtml(p.numero || "—")}</strong>
+          <span style="color:${corNF};font-weight:700;white-space:nowrap">${fmtBRL(vNF)}</span>
+        </div>
+        <div style="color:#555;font-size:10.5px;margin-top:1px">${escapeHtml(p.cliente || "—")}</div>
+        <div style="color:#888;font-size:10px;margin-top:1px">
+          ${p.peso ? `${fmtNum(p.peso,0)} kg · ` : ""}Frete total: <strong style="color:${corNF}">${fmtBRL(c.total)}</strong>${aviso}
+        </div>
+      </div>`;
+    }).join("");
+
+    const popupHtml = `
+      <div style="min-width:260px;max-width:320px">
+        <div style="padding:2px 0 8px">
+          <strong style="font-size:13px">${escapeHtml(info.cidade)}</strong><br>
+          <span style="color:#666;font-size:11px">${info.matched ? `Rota ${info.rota}` : "⚠ Não atendida"}</span>
+        </div>
+        <div style="padding:8px 10px;background:#f6f6f6;border-radius:4px;margin-bottom:8px">
+          <strong style="font-size:13px">${info.pedidos.length}</strong> pedido(s) ·
+          <strong style="font-size:13px">${fmtBRL(fat)}</strong>
+          ${temFreteAlto ? `<div style="color:#c00;font-size:10.5px;margin-top:3px">⚠ Frete maior que NF em algum pedido</div>` : ""}
+        </div>
+        <div style="max-height:260px;overflow-y:auto;border:1px solid #e5e5e5;border-radius:4px;background:#fff">
+          ${linhasPedidos}
+        </div>
+        <div style="font-size:9.5px;color:#999;text-align:center;margin-top:4px">
+          ${info.pedidos.length > 5 ? "↕ role pra ver todos os pedidos" : ""}
+        </div>
+      </div>`;
 
     const marker = L.marker([info.lat, info.lng], { icon })
       .addTo(mapaInstance)
-      .bindPopup(popup);
+      .bindPopup(popupHtml, { maxWidth: 340, minWidth: 270, autoPanPadding: [40, 40] });
     mapaMarkers.push(marker);
     bounds.push([info.lat, info.lng]);
 
