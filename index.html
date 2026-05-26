@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Calculadora de Frete — CKC / Super ABC</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   /* ===========================================================
      RESET + BASE
@@ -836,6 +838,53 @@
   .status-warn  { color: var(--warn); font-weight: 700; }
   .status-bad   { color: var(--err); font-weight: 700; }
 
+  /* Cards de escopo */
+  .escopo-card {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all .15s;
+    display: block;
+  }
+  .escopo-card:hover {
+    background: #333;
+    border-color: #555;
+  }
+  .escopo-card.escopo-active {
+    background: #2a2418;
+    border-color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .escopo-card .escopo-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .escopo-card.escopo-active .escopo-title {
+    color: var(--accent);
+  }
+  .escopo-card .escopo-desc {
+    font-size: 10.5px;
+    color: var(--text-dim);
+    line-height: 1.4;
+    margin-bottom: 6px;
+  }
+  .escopo-card .escopo-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .escopo-card.escopo-active .escopo-count {
+    color: var(--accent-2);
+  }
+  @media (max-width: 700px) {
+    #escopoOptions { grid-template-columns: 1fr !important; }
+  }
+
   /* Modal */
   .modal-back {
     position: fixed; inset: 0;
@@ -953,6 +1002,7 @@
       <div class="action-bar">
         <button class="btn btn-small" id="btnRecalc">🔄 Recalcular tudo</button>
         <button class="btn btn-small" id="btnFillPeso">⚖️ Distribuir peso médio…</button>
+        <button class="btn btn-small btn-primary" id="btnExportPdf">📄 Gerar PDF do orçamento</button>
         <button class="btn btn-small" id="btnClearPedidos">🗑️ Limpar pedidos</button>
         <label class="checkbox-line">
           <input type="checkbox" id="hideUnmatched">
@@ -998,6 +1048,10 @@
         <div class="total-card">
           <div class="label">Peso total (kg)</div>
           <div class="value" id="tPeso">0</div>
+        </div>
+        <div class="total-card">
+          <div class="label">KM total (atendidas)</div>
+          <div class="value" id="tKm">0 km</div>
         </div>
         <div class="total-card">
           <div class="label">Valor NF total</div>
@@ -1199,6 +1253,40 @@
         <div class="spacer"></div>
         <button class="btn btn-small" id="btnTrocarSenha">🔑 Trocar senha</button>
         <button class="btn btn-small btn-danger" id="btnLogout">🚪 Sair</button>
+      </div>
+    </div>
+
+    <!-- ESCOPO DA COMPARAÇÃO -->
+    <div class="panel">
+      <div class="panel-title">🎯 Escopo da comparação</div>
+      <p style="font-size:11.5px;color:var(--text-dim);margin-bottom:12px">
+        Escolha quais pedidos entram no comparativo. A comparação justa é normalmente entre
+        <strong>apenas cidades atendidas pela transportadora</strong>, pois é o conjunto que ela cobraria de você.
+      </p>
+
+      <div id="escopoOptions" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+        <label class="escopo-card escopo-active" data-escopo="atendidas">
+          <input type="radio" name="escopo" value="atendidas" checked style="display:none">
+          <div class="escopo-title">✅ Apenas atendidas</div>
+          <div class="escopo-desc">Só os pedidos que a transportadora cobre na malha (recomendado)</div>
+          <div class="escopo-count" id="escCntAt">—</div>
+        </label>
+        <label class="escopo-card" data-escopo="todos">
+          <input type="radio" name="escopo" value="todos" style="display:none">
+          <div class="escopo-title">📦 Todos os pedidos</div>
+          <div class="escopo-desc">Frota própria atende tudo; transportadora só atende as cidades da malha</div>
+          <div class="escopo-count" id="escCntAll">—</div>
+        </label>
+        <label class="escopo-card" data-escopo="nao_atendidas">
+          <input type="radio" name="escopo" value="nao_atendidas" style="display:none">
+          <div class="escopo-title">🚫 Não atendidas</div>
+          <div class="escopo-desc">Só o que a transportadora NÃO entrega — útil pra modelo híbrido</div>
+          <div class="escopo-count" id="escCntNot">—</div>
+        </label>
+      </div>
+
+      <div id="escopoResumo" style="background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:10px 14px;font-size:12px;color:var(--text-dim)">
+        <span id="escopoResumoTxt">Carregue pedidos na aba <strong>Pedidos</strong> para ver o resumo.</span>
       </div>
     </div>
 
@@ -1889,6 +1977,8 @@ function renderPedidos() {
   let totQtd = 0, totPeso = 0, totNF = 0, totFreteKm = 0, totHub = 0, totGris = 0, totPedagio = 0, totTotal = 0;
   let unmatchedCount = 0;
   let freteAltoCount = 0;
+  // KM total: soma km de cada cidade ATENDIDA distinta (não duplica por pedido)
+  const cidadesKmUnicas = new Map(); // chave normalizada -> km
 
   for (const rota of sortedKeys) {
     const lista = grupos.get(rota);
@@ -1914,6 +2004,16 @@ function renderPedidos() {
       rTotal += calc.total;
 
       if (!p.matched) unmatchedCount++;
+
+      // Coletar km da cidade (apenas atendidas, sem duplicar — uma viagem por cidade)
+      if (p.matched) {
+        const chave = normCity(p.cidade || p.cidadeRaw) + "|" + (p.rota || "");
+        if (!cidadesKmUnicas.has(chave)) {
+          // Usa o km efetivo (kmOverride se houver, senão o km base)
+          const kmEfetivo = p.kmOverride != null ? Number(p.kmOverride) : (Number(p.km) || 0);
+          cidadesKmUnicas.set(chave, kmEfetivo);
+        }
+      }
 
       // Frete maior que o valor da NF? Só conta se houver valor de NF >0
       const valorNF = Number(p.valorNF) || 0;
@@ -1988,9 +2088,20 @@ function renderPedidos() {
 
   body.innerHTML = html;
 
+  // Soma km único das cidades atendidas
+  let totKm = 0;
+  cidadesKmUnicas.forEach(km => totKm += km);
+  const qtdCidadesAt = cidadesKmUnicas.size;
+
   // Atualizar cards
   document.getElementById("tQtd").textContent = totQtd;
   document.getElementById("tPeso").textContent = fmtNum(totPeso, 1) + " kg";
+  document.getElementById("tKm").textContent = fmtNum(totKm, 0) + " km";
+  // Sublabel com qtd de cidades
+  const tKmEl = document.getElementById("tKm");
+  if (tKmEl && qtdCidadesAt > 0) {
+    tKmEl.title = `${qtdCidadesAt} cidade(s) atendida(s) distinta(s)`;
+  }
   document.getElementById("tNF").textContent = fmtBRL(totNF);
   document.getElementById("tFreteKm").textContent = fmtBRL(totFreteKm);
   document.getElementById("tHub").textContent = fmtBRL(totHub);
@@ -2442,6 +2553,511 @@ document.getElementById("btnClearPedidos").addEventListener("click", () => {
 document.getElementById("hideUnmatched").addEventListener("change", renderPedidos);
 
 /* =========================================================================
+   GERAÇÃO DE PDF — Orçamento premium
+   ========================================================================= */
+document.getElementById("btnExportPdf").addEventListener("click", () => {
+  try {
+    if (state.pedidos.length === 0) {
+      alert("Nenhum pedido para exportar. Carregue um romaneio primeiro.");
+      return;
+    }
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      alert("Biblioteca de PDF não carregou. Verifique sua conexão e recarregue a página.");
+      return;
+    }
+    gerarPdfOrcamento();
+  } catch (e) {
+    console.error(e);
+    alert("Erro ao gerar PDF: " + e.message);
+  }
+});
+
+function gerarPdfOrcamento() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+  // Cores premium
+  const PRETO = [26, 26, 26];        // #1a1a1a
+  const AMARELO = [255, 199, 58];    // #ffc73a
+  const AMARELO_CLARO = [255, 216, 102]; // #ffd866
+  const CINZA_CLARO = [240, 240, 240];
+  const CINZA_MEDIO = [180, 180, 180];
+  const CINZA_ESCURO = [80, 80, 80];
+  const VERDE = [74, 222, 128];
+  const VERMELHO = [248, 113, 113];
+  const BRANCO = [255, 255, 255];
+
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margem = 14;
+
+  // ===== Coletar dados =====
+  const transportadora = state.activePreset || "CKC Transportes";
+  const hoje = new Date();
+  const dataStr = hoje.toLocaleDateString("pt-BR");
+  const numeroOrc = `ORC-${hoje.getFullYear()}${String(hoje.getMonth()+1).padStart(2,"0")}${String(hoje.getDate()).padStart(2,"0")}-${String(hoje.getHours()).padStart(2,"0")}${String(hoje.getMinutes()).padStart(2,"0")}`;
+
+  // Agrupar pedidos por rota
+  const ordemRotas = ["SJRP", "Truck corredor", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "—"];
+  const grupos = new Map();
+  for (const p of state.pedidos) {
+    const k = p.rota || "—";
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(p);
+  }
+  const sortedKeys = Array.from(grupos.keys()).sort((a, b) => {
+    const ia = ordemRotas.indexOf(a);
+    const ib = ordemRotas.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  // Calcular totais
+  let totQtd = 0, totPeso = 0, totNF = 0, totFreteKm = 0, totHub = 0, totGris = 0, totPedagio = 0, totTotal = 0;
+  const cidadesKmUnicas = new Map();
+  const cidadesUnicas = new Set();
+  let unmatched = 0;
+  for (const p of state.pedidos) {
+    const c = calcPedido(p);
+    totQtd++;
+    totPeso += Number(p.peso) || 0;
+    totNF += Number(p.valorNF) || 0;
+    totFreteKm += c.freteKm;
+    totHub += c.hub;
+    totGris += c.gris;
+    totPedagio += c.pedagio;
+    totTotal += c.total;
+    if (p.matched) {
+      const chave = normCity(p.cidade) + "|" + (p.rota || "");
+      if (!cidadesKmUnicas.has(chave)) {
+        const kmEf = p.kmOverride != null ? Number(p.kmOverride) : (Number(p.km) || 0);
+        cidadesKmUnicas.set(chave, kmEf);
+      }
+      cidadesUnicas.add(normCity(p.cidade));
+    } else {
+      unmatched++;
+    }
+  }
+  let totKm = 0;
+  cidadesKmUnicas.forEach(km => totKm += km);
+
+  // ============ CABEÇALHO ============
+  // Faixa amarela no topo
+  doc.setFillColor(...AMARELO);
+  doc.rect(0, 0, pageW, 8, "F");
+
+  // Cabeçalho preto principal
+  doc.setFillColor(...PRETO);
+  doc.rect(0, 8, pageW, 32, "F");
+
+  // Logo textual "CKC"
+  doc.setTextColor(...AMARELO);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(28);
+  doc.text("CKC", margem, 26);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...CINZA_CLARO);
+  doc.text("TRANSPORTES", margem + 22, 24);
+  doc.setFontSize(7);
+  doc.setTextColor(...CINZA_MEDIO);
+  doc.text("Sua carga, nossa responsabilidade", margem + 22, 29);
+
+  // Título à direita
+  doc.setTextColor(...BRANCO);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text("ORÇAMENTO DE FRETE", pageW - margem, 20, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...AMARELO);
+  doc.text(numeroOrc, pageW - margem, 27, { align: "right" });
+  doc.setTextColor(...CINZA_CLARO);
+  doc.setFontSize(8);
+  doc.text(`Emitido em ${dataStr}`, pageW - margem, 32, { align: "right" });
+  doc.text(`Válido por 7 dias`, pageW - margem, 36, { align: "right" });
+
+  // Faixa amarela inferior do cabeçalho
+  doc.setFillColor(...AMARELO);
+  doc.rect(0, 40, pageW, 2, "F");
+
+  let y = 50;
+
+  // ============ DADOS DO CLIENTE / OPERAÇÃO ============
+  doc.setFillColor(245, 245, 245);
+  doc.rect(margem, y, pageW - 2*margem, 22, "F");
+  doc.setDrawColor(...AMARELO);
+  doc.setLineWidth(0.8);
+  doc.line(margem, y, margem, y + 22);
+
+  doc.setTextColor(...CINZA_ESCURO);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("CLIENTE / OPERAÇÃO", margem + 4, y + 5);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...PRETO);
+  doc.text("Super ABC", margem + 4, y + 11);
+  doc.setFontSize(8);
+  doc.setTextColor(...CINZA_ESCURO);
+  doc.text("Coleta: CD Super ABC — Mauá / SP", margem + 4, y + 16);
+  doc.text("Destinos: Interior de São Paulo (via Hub Itápolis)", margem + 4, y + 20);
+
+  // Coluna direita
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...CINZA_ESCURO);
+  doc.text("MODAL / OPERAÇÃO", pageW - margem - 70, y + 5);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...PRETO);
+  doc.text("Transporte Fracionado (LTL)", pageW - margem - 70, y + 11);
+  doc.setFontSize(8);
+  doc.setTextColor(...CINZA_ESCURO);
+  doc.text(`Transportadora: ${transportadora}`, pageW - margem - 70, y + 16);
+  doc.text(`Hub: Itápolis — SP · Cross-dock`, pageW - margem - 70, y + 20);
+
+  y += 28;
+
+  // ============ RESUMO EXECUTIVO — cards ============
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...PRETO);
+  doc.text("RESUMO DA OPERAÇÃO", margem, y);
+  doc.setDrawColor(...AMARELO);
+  doc.setLineWidth(1.5);
+  doc.line(margem, y + 1.5, margem + 50, y + 1.5);
+  y += 6;
+
+  // 4 cards lado a lado: pedidos / cidades / km / faturamento
+  const cardW = (pageW - 2*margem - 9) / 4;
+  const cardH = 18;
+  const cards = [
+    { lbl: "PEDIDOS", val: String(totQtd), sub: unmatched > 0 ? `${unmatched} não atendid.` : "todos atendidos" },
+    { lbl: "CIDADES", val: String(cidadesUnicas.size), sub: "destinos únicos" },
+    { lbl: "KM TOTAL", val: fmtNum(totKm, 0) + " km", sub: "rota das atendidas" },
+    { lbl: "FATURAMENTO", val: fmtBRL(totNF), sub: "valor das NFs" }
+  ];
+  cards.forEach((c, i) => {
+    const x = margem + i * (cardW + 3);
+    doc.setFillColor(...PRETO);
+    doc.rect(x, y, cardW, cardH, "F");
+    doc.setFillColor(...AMARELO);
+    doc.rect(x, y, 2, cardH, "F");
+    doc.setTextColor(...CINZA_MEDIO);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.text(c.lbl, x + 4, y + 5);
+    doc.setTextColor(...AMARELO);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(c.val, x + 4, y + 12);
+    doc.setTextColor(...CINZA_CLARO);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.5);
+    doc.text(c.sub, x + 4, y + 16);
+  });
+  y += cardH + 8;
+
+  // ============ TABELA DE PEDIDOS — agrupada por rota ============
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...PRETO);
+  doc.text("DETALHAMENTO POR ROTA", margem, y);
+  doc.setDrawColor(...AMARELO);
+  doc.setLineWidth(1.5);
+  doc.line(margem, y + 1.5, margem + 60, y + 1.5);
+  y += 4;
+
+  // Cabeçalho da tabela
+  const headers = [["#", "Cidade / Destino", "Cliente", "N.Ped", "Km", "Peso", "Valor NF", "Frete", "Hub", "GRIS", "Total"]];
+
+  // Constrói linhas agrupadas
+  const corpoTabela = [];
+  let idx = 0;
+  for (const rota of sortedKeys) {
+    const lista = grupos.get(rota);
+    if (!lista || lista.length === 0) continue;
+
+    // Linha de cabeçalho de grupo (mostrar como linha especial)
+    const labelRota = rotaLabel(rota);
+    corpoTabela.push([{
+      content: `>>  ${labelRota}  -  ${lista.length} pedido(s)`,
+      colSpan: 11,
+      styles: { fillColor: PRETO, textColor: AMARELO, fontStyle: "bold", fontSize: 8, halign: "left" }
+    }]);
+
+    let sPeso = 0, sNF = 0, sFkm = 0, sHub = 0, sGris = 0, sTotal = 0;
+    for (const p of lista) {
+      idx++;
+      const c = calcPedido(p);
+      sPeso += Number(p.peso) || 0;
+      sNF += Number(p.valorNF) || 0;
+      sFkm += c.freteKm;
+      sHub += c.hub;
+      sGris += c.gris;
+      sTotal += c.total;
+
+      const valorNF = Number(p.valorNF) || 0;
+      const freteAlto = valorNF > 0 && c.total > valorNF;
+
+      const cidadeCel = p.cidade || p.cidadeRaw;
+      const clienteCel = (p.cliente || "").substring(0, 28);
+
+      const linha = [
+        { content: String(idx), styles: { halign: "center", textColor: CINZA_ESCURO, fontSize: 7 } },
+        { content: cidadeCel + (!p.matched ? "  !" : ""), styles: { fontStyle: !p.matched ? "italic" : "normal" } },
+        { content: clienteCel, styles: { fontSize: 6.5 } },
+        { content: p.numero || "", styles: { fontSize: 6.5, textColor: CINZA_ESCURO } },
+        { content: fmtNum(c.km, 0), styles: { halign: "right" } },
+        { content: p.peso ? fmtNum(p.peso, 0) : "—", styles: { halign: "right" } },
+        { content: valorNF > 0 ? "R$ " + fmtNum(valorNF, 2) : "—", styles: { halign: "right" } },
+        { content: "R$ " + fmtNum(c.freteKm, 2), styles: { halign: "right" } },
+        { content: "R$ " + fmtNum(c.hub, 2), styles: { halign: "right" } },
+        { content: fmtNum(c.gris, 2), styles: { halign: "right" } },
+        { content: "R$ " + fmtNum(c.total, 2), styles: { halign: "right", fontStyle: "bold", textColor: freteAlto ? VERMELHO : PRETO } }
+      ];
+      corpoTabela.push(linha);
+    }
+
+    // Subtotal da rota
+    corpoTabela.push([
+      { content: `Subtotal ${labelRota}`, colSpan: 5,
+        styles: { fillColor: [250, 240, 200], textColor: PRETO, fontStyle: "bold", fontSize: 7, halign: "right" } },
+      { content: fmtNum(sPeso, 0), styles: { fillColor: [250, 240, 200], halign: "right", fontStyle: "bold", fontSize: 7 } },
+      { content: "R$ " + fmtNum(sNF, 2), styles: { fillColor: [250, 240, 200], halign: "right", fontStyle: "bold", fontSize: 7 } },
+      { content: "R$ " + fmtNum(sFkm, 2), styles: { fillColor: [250, 240, 200], halign: "right", fontStyle: "bold", fontSize: 7 } },
+      { content: "R$ " + fmtNum(sHub, 2), styles: { fillColor: [250, 240, 200], halign: "right", fontStyle: "bold", fontSize: 7 } },
+      { content: fmtNum(sGris, 2), styles: { fillColor: [250, 240, 200], halign: "right", fontStyle: "bold", fontSize: 7 } },
+      { content: "R$ " + fmtNum(sTotal, 2), styles: { fillColor: AMARELO, textColor: PRETO, halign: "right", fontStyle: "bold", fontSize: 7.5 } }
+    ]);
+  }
+
+  doc.autoTable({
+    head: headers,
+    body: corpoTabela,
+    startY: y,
+    margin: { left: margem, right: margem },
+    theme: "plain",
+    styles: {
+      fontSize: 7,
+      cellPadding: { top: 1.5, right: 1.5, bottom: 1.5, left: 1.5 },
+      lineColor: [220, 220, 220],
+      lineWidth: 0.1,
+      textColor: PRETO,
+      overflow: "linebreak"
+    },
+    headStyles: {
+      fillColor: PRETO,
+      textColor: AMARELO,
+      fontStyle: "bold",
+      fontSize: 7,
+      halign: "left",
+      cellPadding: { top: 2.5, right: 1.5, bottom: 2.5, left: 1.5 }
+    },
+    columnStyles: {
+      0: { cellWidth: 7, halign: "center" },     // # — 7
+      1: { cellWidth: 26 },                       // Cidade — 26
+      2: { cellWidth: 31, fontSize: 6.5 },        // Cliente — 31
+      3: { cellWidth: 14, fontSize: 6.5 },        // N.Ped — 14
+      4: { cellWidth: 9, halign: "right" },       // Km — 9
+      5: { cellWidth: 10, halign: "right" },      // Peso — 10
+      6: { cellWidth: 18, halign: "right" },      // Valor NF — 18
+      7: { cellWidth: 17, halign: "right" },      // Frete — 17
+      8: { cellWidth: 14, halign: "right" },      // Hub — 14
+      9: { cellWidth: 11, halign: "right" },      // GRIS — 11
+      10: { cellWidth: 25, halign: "right", fontStyle: "bold" }  // Total — 25
+    },
+    didDrawPage: function (data) {
+      addFooter(doc, pageW, pageH, margem);
+    }
+  });
+
+  y = doc.lastAutoTable.finalY + 8;
+
+  // ============ RESUMO FINANCEIRO ============
+  // Verificar quebra de página
+  if (y > pageH - 90) {
+    doc.addPage();
+    addFooter(doc, pageW, pageH, margem);
+    y = 20;
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...PRETO);
+  doc.text("RESUMO FINANCEIRO", margem, y);
+  doc.setDrawColor(...AMARELO);
+  doc.setLineWidth(1.5);
+  doc.line(margem, y + 1.5, margem + 50, y + 1.5);
+  y += 6;
+
+  // Tabela de composição
+  const linhasFinanceiro = [
+    ["Frete por km (Truck + Fiorino)", fmtBRL(totFreteKm)],
+    ["Taxa Hub (cross-dock)", fmtBRL(totHub)],
+    ["GRIS (0,08% sobre NF)", fmtBRL(totGris)],
+    ["Pedágios (à parte)", fmtBRL(totPedagio)]
+  ];
+
+  doc.autoTable({
+    body: linhasFinanceiro,
+    startY: y,
+    margin: { left: margem, right: pageW / 2 + 2 },
+    theme: "plain",
+    styles: {
+      fontSize: 9,
+      cellPadding: { top: 2.5, right: 4, bottom: 2.5, left: 4 },
+      lineColor: [230, 230, 230],
+      lineWidth: 0.1
+    },
+    columnStyles: {
+      0: { cellWidth: 60, textColor: CINZA_ESCURO },
+      1: { halign: "right", fontStyle: "bold", textColor: PRETO }
+    }
+  });
+  const finalFinY = doc.lastAutoTable.finalY;
+
+  // Bloco de Fatura Total (à direita) — destaque
+  const blocoX = pageW / 2 + 2;
+  const blocoW = pageW - margem - blocoX;
+  const blocoH = 35;
+  doc.setFillColor(...PRETO);
+  doc.rect(blocoX, y, blocoW, blocoH, "F");
+  doc.setFillColor(...AMARELO);
+  doc.rect(blocoX, y, blocoW, 3, "F");
+
+  doc.setTextColor(...AMARELO);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("FATURA TOTAL", blocoX + 5, y + 11);
+  doc.setTextColor(...BRANCO);
+  doc.setFontSize(20);
+  doc.text(fmtBRL(totTotal), blocoX + 5, y + 22);
+  doc.setTextColor(...CINZA_CLARO);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.text(`${totQtd} pedido(s) · ${cidadesUnicas.size} cidade(s) · ${fmtNum(totKm,0)} km`, blocoX + 5, y + 28);
+  doc.text(`Pagamento: 7 dias após emissão do CT-e`, blocoX + 5, y + 32);
+
+  y = Math.max(finalFinY, y + blocoH) + 8;
+
+  // ============ CONDIÇÕES COMERCIAIS ============
+  // Quebra se necessário
+  if (y > pageH - 70) {
+    doc.addPage();
+    addFooter(doc, pageW, pageH, margem);
+    y = 20;
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...PRETO);
+  doc.text("CONDIÇÕES COMERCIAIS", margem, y);
+  doc.setDrawColor(...AMARELO);
+  doc.setLineWidth(1.5);
+  doc.line(margem, y + 1.5, margem + 55, y + 1.5);
+  y += 6;
+
+  const condicoes = [
+    ["Tarifa Truck", `R$ ${fmtNum(state.config.truckKm, 2)} / km · Cargas acima de ${state.config.limitePeso} kg ou rota principal`],
+    ["Tarifa Fiorino/HR", `R$ ${fmtNum(state.config.fiorinoKm, 2)} / km · Cross-dock até ${state.config.limitePeso} kg`],
+    ["Taxa Hub", `R$ ${fmtNum(state.config.hubFixa, 2)} por NF + R$ ${fmtNum(state.config.hubKg, 3)} por kg`],
+    ["GRIS", `${fmtNum(state.config.gris, 2)}% sobre o valor da NF (seguro de carga incluso)`],
+    ["Frete mínimo SJRP", `${fmtBRL(state.config.minSJRP)} para a rota principal Mauá -> S.J. Rio Preto`],
+    ["Reentrega", `${fmtNum(state.config.reentrega, 0)}% do valor do frete original`],
+    ["Pedágios", `Cobrados à parte, conforme planejamento de rota`],
+    ["Faturamento", `Semanal, na emissão do CT-e · Pagamento em até 7 dias`]
+  ];
+
+  doc.autoTable({
+    body: condicoes,
+    startY: y,
+    margin: { left: margem, right: margem },
+    theme: "plain",
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 2, right: 4, bottom: 2, left: 4 },
+      lineColor: [235, 235, 235],
+      lineWidth: 0.1
+    },
+    columnStyles: {
+      0: { cellWidth: 38, fontStyle: "bold", textColor: PRETO, fillColor: [250, 248, 240] },
+      1: { textColor: CINZA_ESCURO }
+    }
+  });
+  y = doc.lastAutoTable.finalY + 6;
+
+  // Aviso de cidades não atendidas (se houver)
+  if (unmatched > 0) {
+    if (y > pageH - 30) { doc.addPage(); addFooter(doc, pageW, pageH, margem); y = 20; }
+    doc.setFillColor(255, 245, 230);
+    doc.rect(margem, y, pageW - 2*margem, 14, "F");
+    doc.setDrawColor(...VERMELHO);
+    doc.setLineWidth(0.8);
+    doc.line(margem, y, margem, y + 14);
+    doc.setTextColor(...VERMELHO);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("! ATENCAO", margem + 4, y + 5);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...CINZA_ESCURO);
+    doc.text(`${unmatched} pedido(s) com cidades fora da malha atual da transportadora - verificar atendimento antes do fechamento.`, margem + 4, y + 11);
+    y += 18;
+  }
+
+  // ============ RODAPÉ FINAL DA ÚLTIMA PÁGINA ============
+  if (y < pageH - 35) {
+    y = pageH - 35;
+  }
+  doc.setDrawColor(...AMARELO);
+  doc.setLineWidth(0.5);
+  doc.line(margem, y, pageW - margem, y);
+  y += 5;
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(7);
+  doc.setTextColor(...CINZA_ESCURO);
+  doc.text("Este orçamento é uma estimativa baseada nos pedidos e tarifas vigentes na data de emissão. Valores finais conforme CT-e emitido após a coleta efetiva.", margem, y);
+
+  // Garantir rodapé na última página
+  addFooter(doc, pageW, pageH, margem);
+
+  // ============ SALVAR ============
+  const nomeArq = `Orcamento_${transportadora.replace(/[^a-zA-Z0-9]/g, "_")}_${numeroOrc}.pdf`;
+  doc.save(nomeArq);
+}
+
+function addFooter(doc, pageW, pageH, margem) {
+  const PRETO = [26, 26, 26];
+  const AMARELO = [255, 199, 58];
+  const CINZA_MEDIO = [180, 180, 180];
+  const BRANCO = [255, 255, 255];
+
+  // Faixa preta no rodapé
+  doc.setFillColor(...PRETO);
+  doc.rect(0, pageH - 12, pageW, 12, "F");
+  doc.setFillColor(...AMARELO);
+  doc.rect(0, pageH - 12, pageW, 1, "F");
+
+  doc.setTextColor(...AMARELO);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.text("CKC TRANSPORTES", margem, pageH - 6.5);
+  doc.setTextColor(...BRANCO);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.text("São Bernardo do Campo – SP  ·  (11) 98898-8579  ·  ckctransportes.com.br", margem, pageH - 3);
+
+  // Número da página
+  const pageNum = doc.internal.getNumberOfPages();
+  doc.setTextColor(...CINZA_MEDIO);
+  doc.setFontSize(7);
+  doc.text(`Página ${doc.internal.getCurrentPageInfo().pageNumber} de ${pageNum}`, pageW - margem, pageH - 5, { align: "right" });
+}
+
+
+/* =========================================================================
   16. DROP ZONE
    ========================================================================= */
 const dropZone = document.getElementById("dropZone");
@@ -2610,6 +3226,48 @@ document.getElementById("modalPwd").addEventListener("click", e => {
   }
 });
 
+/* ===== Escopo da comparação ===== */
+let analiseEscopo = "atendidas"; // "atendidas" | "todos" | "nao_atendidas"
+
+function setEscopo(modo) {
+  analiseEscopo = modo;
+  document.querySelectorAll(".escopo-card").forEach(c => {
+    c.classList.toggle("escopo-active", c.dataset.escopo === modo);
+  });
+  // Atualiza radios (caso alguém leia o input)
+  document.querySelectorAll('input[name="escopo"]').forEach(r => {
+    r.checked = (r.value === modo);
+  });
+  try { localStorage.setItem("ckc_analise_escopo", modo); } catch (e) {}
+  calcAnalise();
+}
+
+document.querySelectorAll(".escopo-card").forEach(card => {
+  card.addEventListener("click", () => setEscopo(card.dataset.escopo));
+});
+
+function getPedidosEscopo() {
+  // Retorna { pedidosA, pedidosB, modo, todos }
+  // pedidosA = entram no cálculo da PRÓPRIA (cenário A)
+  // pedidosB = entram no cálculo da TRANSPORTADORA (cenário B)
+  const todos = state.pedidos;
+  const atendidos = todos.filter(p => p.matched);
+  const naoAtendidos = todos.filter(p => !p.matched);
+
+  if (analiseEscopo === "atendidas") {
+    return { pedidosA: atendidos, pedidosB: atendidos, modo: "atendidas",
+      contagem: { total: todos.length, atendidos: atendidos.length, naoAtendidos: naoAtendidos.length } };
+  }
+  if (analiseEscopo === "nao_atendidas") {
+    // Própria atende as não atendidas; transportadora não atende nenhuma → cenário B = 0
+    return { pedidosA: naoAtendidos, pedidosB: [], modo: "nao_atendidas",
+      contagem: { total: todos.length, atendidos: atendidos.length, naoAtendidos: naoAtendidos.length } };
+  }
+  // "todos": Própria entrega tudo; transportadora só entrega o que está na malha
+  return { pedidosA: todos, pedidosB: atendidos, modo: "todos",
+    contagem: { total: todos.length, atendidos: atendidos.length, naoAtendidos: naoAtendidos.length } };
+}
+
 /* ===== Cálculo da análise ===== */
 function readAnaliseInputs() {
   return {
@@ -2633,25 +3291,51 @@ function readAnaliseInputs() {
 
 function calcAnalise() {
   const i = readAnaliseInputs();
+  const esc = getPedidosEscopo();
 
   // ===== Mensal por motorista =====
   const totalMensalMot = i.salario + i.encargos + i.beneficios + i.horaExtra;
   document.getElementById("cpTotalMotoristas").value = fmtBRL(totalMensalMot * i.qtdMot);
 
+  // ===== Atualizar contadores nos cards de escopo =====
+  const totalGeral = state.pedidos.length;
+  const totalAt = esc.contagem.atendidos;
+  const totalNot = esc.contagem.naoAtendidos;
+  document.getElementById("escCntAt").textContent = `${totalAt} pedido(s)`;
+  document.getElementById("escCntAll").textContent = `${totalGeral} pedido(s)`;
+  document.getElementById("escCntNot").textContent = `${totalNot} pedido(s)`;
+
+  // Resumo do escopo
+  const resumoEl = document.getElementById("escopoResumoTxt");
+  if (totalGeral === 0) {
+    resumoEl.innerHTML = `Carregue pedidos na aba <strong>Pedidos</strong> para ver o resumo.`;
+  } else if (esc.modo === "atendidas") {
+    if (totalNot > 0) {
+      resumoEl.innerHTML = `Comparando <strong>${totalAt} pedido(s) atendido(s)</strong> pela CKC. <strong>${totalNot} pedido(s)</strong> não atendido(s) foram excluídos da comparação.`;
+    } else {
+      resumoEl.innerHTML = `Todos os <strong>${totalAt} pedido(s)</strong> estão na malha da transportadora — comparação completa.`;
+    }
+  } else if (esc.modo === "todos") {
+    resumoEl.innerHTML = `Frota própria entrega <strong>todos os ${totalGeral} pedido(s)</strong>. Transportadora só cobra os <strong>${totalAt} atendido(s)</strong> — os ${totalNot} não atendidos viram custo extra do cenário A.`;
+  } else {
+    resumoEl.innerHTML = `Comparando apenas os <strong>${totalNot} pedido(s) NÃO atendido(s)</strong> pela transportadora — útil pra dimensionar um modelo híbrido (a própria cuida do que sobra).`;
+  }
+
   // ===== Cenário A — Própria =====
-  // Motoristas: proporção da viagem nos dias úteis × qtd motoristas
   const custoMotViagem = (totalMensalMot / i.diasUteis) * i.diasViagem * i.qtdMot;
   const custoCaminhao = i.kmViagem * i.custoKmReal;
   const custoPropTotal = custoMotViagem + custoCaminhao + i.hospedagem + i.pedagiosP;
   const custoPropImprev = custoPropTotal * (1 + i.imprev/100);
 
-  // ===== Faturamento (vem da aba Pedidos) =====
-  const totalNF = state.pedidos.reduce((s, p) => s + (Number(p.valorNF) || 0), 0);
-  const qtdPedidos = state.pedidos.length;
+  // ===== Faturamento (de cada conjunto) =====
+  const fatPropria = esc.pedidosA.reduce((s, p) => s + (Number(p.valorNF) || 0), 0);
+  const fatTransp = esc.pedidosB.reduce((s, p) => s + (Number(p.valorNF) || 0), 0);
+  const qtdPropria = esc.pedidosA.length;
+  const qtdTransp = esc.pedidosB.length;
 
-  // ===== Cenário B — Transportadora (totais já calculados no renderPedidos) =====
+  // ===== Cenário B — Transportadora =====
   let totFreteKm = 0, totHub = 0, totGris = 0, totPedagio = 0;
-  for (const p of state.pedidos) {
+  for (const p of esc.pedidosB) {
     const c = calcPedido(p);
     totFreteKm += c.freteKm;
     totHub += c.hub;
@@ -2661,23 +3345,23 @@ function calcAnalise() {
   const custoTranspTotal = totFreteKm + totHub + totGris + totPedagio;
 
   // ===== Margens =====
-  const margemPropria = totalNF - custoPropImprev;
-  const margemTransp = totalNF - custoTranspTotal;
-  const pctPropria = totalNF > 0 ? (margemPropria / totalNF * 100) : 0;
-  const pctTransp = totalNF > 0 ? (margemTransp / totalNF * 100) : 0;
+  const margemPropria = fatPropria - custoPropImprev;
+  const margemTransp = fatTransp - custoTranspTotal;
+  const pctPropria = fatPropria > 0 ? (margemPropria / fatPropria * 100) : 0;
+  const pctTransp = fatTransp > 0 ? (margemTransp / fatTransp * 100) : 0;
 
   // ===== Custo/km =====
   const propCkm = i.kmViagem > 0 ? custoPropImprev / i.kmViagem : 0;
   const transpCkm = i.kmViagem > 0 ? custoTranspTotal / i.kmViagem : 0;
 
   // ===== Break-even por pedido =====
-  const propBe = qtdPedidos > 0 ? custoPropImprev / qtdPedidos : 0;
-  const transpBe = qtdPedidos > 0 ? custoTranspTotal / qtdPedidos : 0;
+  const propBe = qtdPropria > 0 ? custoPropImprev / qtdPropria : 0;
+  const transpBe = qtdTransp > 0 ? custoTranspTotal / qtdTransp : 0;
 
   // ===== Frete sugerido =====
   const sugRkm = i.custoKmReal * (1 + i.margem/100);
   const sugFrete = sugRkm * i.kmViagem;
-  const sugMinPed = qtdPedidos > 0 ? (custoPropImprev * (1 + i.margem/100)) / qtdPedidos : 0;
+  const sugMinPed = qtdPropria > 0 ? (custoPropImprev * (1 + i.margem/100)) / qtdPropria : 0;
 
   // ===== Renderizar =====
   document.getElementById("apMot").textContent = fmtBRL(custoMotViagem);
@@ -2685,69 +3369,123 @@ function calcAnalise() {
   document.getElementById("apHos").textContent = fmtBRL(i.hospedagem);
   document.getElementById("apPed").textContent = fmtBRL(i.pedagiosP);
   document.getElementById("apTot").textContent = fmtBRL(custoPropImprev);
-  document.getElementById("apFat").textContent = fmtBRL(totalNF);
+  document.getElementById("apFat").textContent = fmtBRL(fatPropria);
   document.getElementById("apMargem").textContent = fmtBRL(margemPropria);
   document.getElementById("apPct").textContent = fmtNum(pctPropria, 1) + "%";
   document.getElementById("apCkm").textContent = "R$ " + fmtNum(propCkm, 2) + "/km";
-  document.getElementById("apBe").textContent = fmtBRL(propBe);
+  document.getElementById("apBe").textContent = qtdPropria > 0 ? fmtBRL(propBe) : "—";
 
   document.getElementById("atFkm").textContent = fmtBRL(totFreteKm);
   document.getElementById("atHub").textContent = fmtBRL(totHub);
   document.getElementById("atGris").textContent = fmtBRL(totGris);
   document.getElementById("atPed").textContent = fmtBRL(totPedagio);
   document.getElementById("atTot").textContent = fmtBRL(custoTranspTotal);
-  document.getElementById("atFat").textContent = fmtBRL(totalNF);
+  document.getElementById("atFat").textContent = fmtBRL(fatTransp);
   document.getElementById("atMargem").textContent = fmtBRL(margemTransp);
   document.getElementById("atPct").textContent = fmtNum(pctTransp, 1) + "%";
   document.getElementById("atCkm").textContent = "R$ " + fmtNum(transpCkm, 2) + "/km";
-  document.getElementById("atBe").textContent = fmtBRL(transpBe);
+  document.getElementById("atBe").textContent = qtdTransp > 0 ? fmtBRL(transpBe) : "—";
 
   // Veredito
-  const diff = margemPropria - margemTransp;  // se positivo: própria gera mais margem
   const valorEl = document.getElementById("vereditoValor");
   const textoEl = document.getElementById("vereditoTexto");
-  if (qtdPedidos === 0) {
+
+  if (qtdPropria === 0 && qtdTransp === 0) {
     valorEl.textContent = "—";
     valorEl.style.color = "var(--text-mute)";
-    textoEl.textContent = "Faça upload de um romaneio na aba Pedidos para ver o comparativo.";
-  } else if (Math.abs(diff) < 1) {
-    valorEl.textContent = fmtBRL(0);
-    valorEl.style.color = "var(--accent)";
-    textoEl.textContent = "Os dois cenários têm margens praticamente iguais.";
-  } else if (diff > 0) {
-    valorEl.textContent = "+ " + fmtBRL(diff);
-    valorEl.style.color = "var(--ok)";
-    textoEl.innerHTML = `<strong style="color:var(--ok)">🚛 Frota própria sai melhor</strong> para esta operação — sobra ${fmtBRL(diff)} a mais de margem.`;
+    textoEl.textContent = "Nenhum pedido nesse escopo. Mude o escopo ou carregue pedidos.";
+  } else if (esc.modo === "nao_atendidas") {
+    // Aqui não dá pra comparar — só própria atende
+    valorEl.textContent = fmtBRL(margemPropria);
+    valorEl.style.color = margemPropria >= 0 ? "var(--ok)" : "var(--err)";
+    textoEl.innerHTML = `Apenas <strong>frota própria</strong> pode atender estas cidades. Margem operacional: <strong>${fmtBRL(margemPropria)}</strong> ${margemPropria < 0 ? "— operação no prejuízo." : "."}`;
+  } else if (esc.modo === "todos") {
+    // Comparação de DUAS bases diferentes (própria=todos, transp=só atendidos).
+    // O comparativo justo é: para os MESMOS pedidos da transportadora, qual seria o custo?
+    // Vamos calcular custo da própria apenas para o subset atendido (proporcional).
+    // Estimativa: distribuir custo proporcional ao km de cada pedido (se tiver), senão por pedido.
+    // Simplificação: comparar margem total de cada cenário (própria entrega tudo vs transp + sobra na própria).
+    const fatTransportadora = fatTransp;
+    const custoTranspMaisSobra = custoTranspTotal + estimarCustoPropPedidos(esc.pedidosA.filter(p => !p.matched), i, totalMensalMot);
+    const margemHibrido = fatPropria - custoTranspMaisSobra;
+    const diff = margemHibrido - margemPropria;
+    if (Math.abs(diff) < 1) {
+      valorEl.textContent = fmtBRL(0);
+      valorEl.style.color = "var(--accent)";
+      textoEl.innerHTML = `<strong>Empate técnico</strong> — fazer tudo com frota própria ou usar transportadora + cobrir as não atendidas dá praticamente a mesma margem.`;
+    } else if (diff > 0) {
+      valorEl.textContent = "+ " + fmtBRL(diff);
+      valorEl.style.color = "var(--ok)";
+      textoEl.innerHTML = `<strong style="color:var(--ok)">📋 Modelo híbrido vence</strong>: terceirizar as ${totalAt} atendidas + cobrir as ${totalNot} restantes com frota própria sobra ${fmtBRL(diff)} a mais que fazer 100% próprio.`;
+    } else {
+      valorEl.textContent = fmtBRL(diff);
+      valorEl.style.color = "var(--err)";
+      textoEl.innerHTML = `<strong style="color:#fbcfcf">🚛 100% próprio vence</strong>: fazer toda a operação com frota própria sai ${fmtBRL(Math.abs(diff))} melhor que terceirizar + cobrir o resto.`;
+    }
   } else {
-    valorEl.textContent = fmtBRL(diff);
-    valorEl.style.color = "var(--err)";
-    textoEl.innerHTML = `<strong style="color:var(--accent-2)">📋 Transportadora sai melhor</strong> para esta operação — economiza ${fmtBRL(Math.abs(diff))} em comparação ao custo próprio.`;
+    // modo "atendidas" — comparativo justo
+    const diff = margemPropria - margemTransp;
+    if (Math.abs(diff) < 1) {
+      valorEl.textContent = fmtBRL(0);
+      valorEl.style.color = "var(--accent)";
+      textoEl.textContent = "Os dois cenários têm margens praticamente iguais.";
+    } else if (diff > 0) {
+      valorEl.textContent = "+ " + fmtBRL(diff);
+      valorEl.style.color = "var(--ok)";
+      textoEl.innerHTML = `<strong style="color:var(--ok)">🚛 Frota própria sai melhor</strong> para esta operação — sobra ${fmtBRL(diff)} a mais de margem.`;
+    } else {
+      valorEl.textContent = fmtBRL(diff);
+      valorEl.style.color = "var(--err)";
+      textoEl.innerHTML = `<strong style="color:var(--accent-2)">📋 Transportadora sai melhor</strong> para esta operação — economiza ${fmtBRL(Math.abs(diff))} em comparação ao custo próprio.`;
+    }
   }
 
   document.getElementById("sugRkm").textContent = "R$ " + fmtNum(sugRkm, 2);
   document.getElementById("sugFrete").textContent = fmtBRL(sugFrete);
-  document.getElementById("sugMinPed").textContent = fmtBRL(sugMinPed);
+  document.getElementById("sugMinPed").textContent = qtdPropria > 0 ? fmtBRL(sugMinPed) : "—";
 
   // Alerts
   const alertBox = document.getElementById("analiseAlert");
-  if (qtdPedidos === 0) {
+  if (totalGeral === 0) {
     alertBox.innerHTML = `<div class="alert">⚠ Nenhum pedido carregado. Faça upload de um romaneio para que o comparativo use o faturamento real.</div>`;
+  } else if (qtdPropria === 0 && esc.modo === "nao_atendidas") {
+    alertBox.innerHTML = `<div class="alert ok">✓ Todos os pedidos estão na malha da transportadora. Nenhuma cidade fora do escopo dela.</div>`;
   } else {
-    alertBox.innerHTML = `<div class="alert info">📊 Comparando <strong>${qtdPedidos} pedidos</strong> · faturamento <strong>${fmtBRL(totalNF)}</strong> · ${fmtNum(i.kmViagem,0)} km · ${i.diasViagem} dia(s).</div>`;
+    let textoModo;
+    if (esc.modo === "atendidas") textoModo = "apenas cidades atendidas pela transportadora";
+    else if (esc.modo === "nao_atendidas") textoModo = "apenas cidades NÃO atendidas pela transportadora";
+    else textoModo = "todos os pedidos do romaneio";
+    alertBox.innerHTML = `<div class="alert info">📊 Comparando <strong>${textoModo}</strong> · ${qtdPropria} pedido(s) no cenário próprio · faturamento <strong>${fmtBRL(fatPropria)}</strong> · ${fmtNum(i.kmViagem,0)} km · ${i.diasViagem} dia(s).</div>`;
   }
 
   // Break-even por pedido
-  renderBreakEven(propBe, sugMinPed);
+  renderBreakEven(propBe, sugMinPed, esc.pedidosA);
 }
 
-function renderBreakEven(beMinimo, beSugerido) {
+// Helper: estima o custo proporcional de fazer um subset de pedidos com frota própria
+// (usado no modo "todos" para o cálculo híbrido). É uma estimativa simples baseada em
+// quantidade de pedidos (já que o custo fixo motorista+caminhão da viagem é fixo).
+function estimarCustoPropPedidos(subset, i, totalMensalMot) {
+  if (!subset || subset.length === 0) return 0;
+  // Custo médio por pedido na frota própria = (custo fixo da viagem) / (total de pedidos)
+  // Aplicar esse rateio ao subset
+  const totalGeral = state.pedidos.length;
+  if (totalGeral === 0) return 0;
+  const custoMot = (totalMensalMot / i.diasUteis) * i.diasViagem * i.qtdMot;
+  const custoCam = i.kmViagem * i.custoKmReal;
+  const custoTotalProp = (custoMot + custoCam + i.hospedagem + i.pedagiosP) * (1 + i.imprev/100);
+  return custoTotalProp * (subset.length / totalGeral);
+}
+
+function renderBreakEven(beMinimo, beSugerido, pedidosLista) {
   const body = document.getElementById("breakEvenBody");
-  if (state.pedidos.length === 0) {
-    body.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-mute)">Sem pedidos para analisar.</td></tr>`;
+  const lista = pedidosLista || state.pedidos;
+  if (lista.length === 0) {
+    body.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-mute)">Sem pedidos nesse escopo.</td></tr>`;
     return;
   }
   let html = "";
-  const sorted = [...state.pedidos].sort((a, b) => (Number(a.valorNF)||0) - (Number(b.valorNF)||0));
+  const sorted = [...lista].sort((a, b) => (Number(a.valorNF)||0) - (Number(b.valorNF)||0));
   sorted.forEach((p, idx) => {
     const v = Number(p.valorNF) || 0;
     const ratio = beMinimo > 0 ? v / beMinimo : 0;
@@ -2759,7 +3497,7 @@ function renderBreakEven(beMinimo, beSugerido) {
 
     html += `<tr>
       <td style="color:var(--text-mute);font-size:11px">${idx+1}</td>
-      <td>${escapeHtml(p.cidade || p.cidadeRaw)}</td>
+      <td>${escapeHtml(p.cidade || p.cidadeRaw)}${!p.matched ? ` <span style="color:var(--err);font-size:10px">⚠ fora da malha</span>` : ""}</td>
       <td style="font-size:11px;color:var(--text-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.cliente)}">${escapeHtml(truncate(p.cliente, 35))}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtBRL(v)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums">${ratio > 0 ? fmtNum(ratio, 2) + "×" : "—"}</td>
@@ -2838,6 +3576,16 @@ function init() {
 
   // Análise: carregar inputs salvos e mostrar/ocultar conforme login
   loadAnaliseInputs();
+  // Carregar escopo salvo
+  try {
+    const sav = localStorage.getItem("ckc_analise_escopo");
+    if (sav === "atendidas" || sav === "todos" || sav === "nao_atendidas") {
+      analiseEscopo = sav;
+      document.querySelectorAll(".escopo-card").forEach(c => {
+        c.classList.toggle("escopo-active", c.dataset.escopo === sav);
+      });
+    }
+  } catch (e) {}
   if (isLoggedIn()) {
     showAnaliseContent();
   } else {
