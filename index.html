@@ -7,6 +7,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   /* ===========================================================
      RESET + BASE
@@ -1001,7 +1003,8 @@
 
       <div class="action-bar">
         <button class="btn btn-small" id="btnRecalc">🔄 Recalcular tudo</button>
-        <button class="btn btn-small" id="btnFillPeso">⚖️ Distribuir peso médio…</button>
+        <button class="btn btn-small" id="btnFillPeso">⚖️ Peso médio…</button>
+        <button class="btn btn-small" id="btnFillPesoVol">📦 Peso por volumes…</button>
         <button class="btn btn-small btn-primary" id="btnExportPdf">📄 Gerar PDF do orçamento</button>
         <button class="btn btn-small" id="btnClearPedidos">🗑️ Limpar pedidos</button>
         <label class="checkbox-line">
@@ -1470,6 +1473,159 @@
       </div>
     </div>
 
+    <!-- GRÁFICO DE MARGEM POR ROTA -->
+    <div class="panel">
+      <div class="panel-title">📊 Margem por rota</div>
+      <p style="font-size:11.5px;color:var(--text-dim);margin-bottom:14px">
+        Cada barra mostra a margem líquida da rota (faturamento − custo proporcional + frete cobrado pela transportadora). Verde = lucrativa · vermelho = no prejuízo.
+      </p>
+      <div id="margemRotaChart" style="min-height:60px"></div>
+      <div id="margemRotaLegend" style="margin-top:10px;font-size:11px;color:var(--text-mute)"></div>
+    </div>
+
+    <!-- SUGESTÃO DE CARGA ÓTIMA -->
+    <div class="panel">
+      <div class="panel-title">💡 Sugestão de carga ótima</div>
+
+      <div style="background:#1a2030;border:1px solid #2a3a4a;border-left:3px solid #5b8ddb;border-radius:4px;padding:12px 14px;margin-bottom:14px;font-size:12px;line-height:1.55">
+        <div style="color:#aac8fb;font-weight:700;margin-bottom:6px">📚 O que é isso?</div>
+        <div style="color:var(--text-dim)">
+          Quando o caminhão sai de Mauá pra fazer a viagem, você paga <strong>os mesmos R$ X de motorista + caminhão + combustível</strong> independente se carregou 5 ou 50 pedidos. Esse é o <strong>custo fixo da viagem</strong> — ele não muda. Então a pergunta importante deixa de ser "quanto cada pedido custa" e vira "<strong>esses pedidos que tenho cobrem o custo de fazer a viagem com a margem que eu quero?</strong>".
+          <br><br>
+          Esta seção pega o custo fixo, divide entre as rotas proporcionalmente (50% pelo km que cada uma usa do caminhão + 50% pelo nº de pedidos que ocupa do espaço) e mostra qual rota está <strong>"pagando seu lugar"</strong> e qual está <strong>"de carona"</strong>.
+        </div>
+      </div>
+
+      <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:14px;margin-bottom:12px">
+        <div style="font-size:10.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:10px">📊 Visão geral da viagem</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px">
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Custo fixo total</div>
+            <div style="font-size:15px;font-weight:700;color:var(--accent)" id="sugCustoFixo">—</div>
+            <div style="font-size:10px;color:var(--text-mute)">O que a viagem custa pra você fazer (motorista + caminhão + hospedagem + pedágio)</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Faturamento mínimo</div>
+            <div style="font-size:15px;font-weight:700;color:var(--accent-2)" id="sugFatMin">—</div>
+            <div style="font-size:10px;color:var(--text-mute)">Quanto as NFs precisam somar pra cobrir o custo + sua margem alvo</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Faturamento atual</div>
+            <div style="font-size:15px;font-weight:700" id="sugFatAtual">—</div>
+            <div style="font-size:10px;color:var(--text-mute)">Soma das NFs dos pedidos que estão no romaneio agora</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">Gap</div>
+            <div style="font-size:15px;font-weight:700" id="sugGap">—</div>
+            <div style="font-size:10px;color:var(--text-mute)">Verde = sobra de margem · Vermelho = falta faturar pra cobrir o alvo</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="sugCargaAlert"></div>
+
+      <div class="pedidos-wrap">
+        <table class="cidades">
+          <thead>
+            <tr>
+              <th title="Rota da malha CKC (F1-F8, SJRP ou corredor)">Rota</th>
+              <th style="text-align:right" title="Quantos pedidos do romaneio caem nessa rota">Pedidos</th>
+              <th style="text-align:right" title="Soma das NFs dos pedidos dessa rota">Faturamento</th>
+              <th style="text-align:right" title="Parte do custo fixo da viagem que cabe a essa rota (50% por km + 50% por pedido)">Custo aloc.</th>
+              <th style="text-align:right" title="Faturamento menos custo alocado">Margem</th>
+              <th style="text-align:right">Pedidos extras<br><span style="font-weight:400;font-size:9px;color:var(--text-mute)">para break-even</span></th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="sugCargaBody"></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+        <div style="background:#142a14;border:1px solid #2a4a2a;border-left:3px solid var(--ok);border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.5">
+          <div style="color:var(--ok);font-weight:700;margin-bottom:4px">✅ Lucrativa</div>
+          <div style="color:var(--text-dim)">A rota fatura mais que o custo alocado dela. Os pedidos dessa rota "pagam seu lugar" no caminhão e ainda sobra. <strong>Manter ou crescer</strong>.</div>
+        </div>
+        <div style="background:#2a2118;border:1px solid #4a3a1f;border-left:3px solid var(--warn);border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.5">
+          <div style="color:var(--warn);font-weight:700;margin-bottom:4px">⚠️ Apertada</div>
+          <div style="color:var(--text-dim)">Margem abaixo de 15% do custo alocado. Cobre o custo mas qualquer reentrega, devolução ou desconto pode virar prejuízo. <strong>Atenção e renegociar tickets baixos</strong>.</div>
+        </div>
+        <div style="background:#2a1414;border:1px solid #4a2222;border-left:3px solid var(--err);border-radius:4px;padding:10px 12px;font-size:11px;line-height:1.5">
+          <div style="color:var(--err);font-weight:700;margin-bottom:4px">🔴 Prejuízo</div>
+          <div style="color:var(--text-dim)">Faturamento da rota não cobre nem o custo alocado. Você está pagando pra ir até essas cidades. <strong>Prospectar clientes na região ou repensar atendê-la</strong>.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;background:#1a1a1a;border:1px solid var(--line);border-radius:4px;padding:12px 14px;font-size:11px;line-height:1.55;color:var(--text-dim)">
+        <div style="color:var(--accent);font-weight:700;margin-bottom:6px;font-size:11.5px">🧮 Como o "Pedidos extras" é calculado</div>
+        <div>
+          O sistema pega o <strong>ticket médio</strong> de todos os pedidos do romaneio (faturamento total ÷ qtd pedidos) e divide o prejuízo da rota por esse valor. O resultado é uma estimativa de <strong>quantos pedidos a mais com o ticket médio da operação</strong> seriam necessários pra essa rota zerar.
+          <br><br>
+          <strong style="color:var(--text)">Exemplo:</strong> rota F5 com prejuízo de R$ 700 e ticket médio da viagem de R$ 350 → precisaria de <strong>+2 pedidos</strong> nessa rota pra equilibrar. Quando há rotas vermelhas, o alerta amarelo no topo já te sugere <strong>cidades específicas da malha</strong> onde você ainda não tem pedido nesse romaneio — bom ponto de partida pra prospecção.
+        </div>
+      </div>
+    </div>
+
+    <!-- MAPA VISUAL -->
+    <div class="panel">
+      <div class="panel-title">🗺️ Mapa da operação</div>
+
+      <div style="background:#1a2030;border:1px solid #2a3a4a;border-left:3px solid #5b8ddb;border-radius:4px;padding:12px 14px;margin-bottom:14px;font-size:12px;line-height:1.55">
+        <div style="color:#aac8fb;font-weight:700;margin-bottom:6px">📚 O que esse mapa mostra</div>
+        <div style="color:var(--text-dim)">
+          Cada bolinha é uma cidade onde tem entrega nesse romaneio. O <strong>número dentro da bolinha</strong> é a quantidade de pedidos pra aquela cidade, e o <strong>tamanho da bolinha</strong> cresce com o faturamento (cidade que fatura R$ 8.000 fica visivelmente maior que uma de R$ 500).
+          <br><br>
+          As <strong>linhas amarelas</strong> conectam o hub de Itápolis às cidades de destino — quando a linha fica vermelha, é porque algum pedido daquela cidade tem frete maior que o valor da NF (prejuízo). A linha cinza tracejada é o trajeto da coleta de Mauá até o hub.
+        </div>
+      </div>
+
+      <div id="mapaViagem" style="width:100%;height:480px;border:1px solid var(--line);border-radius:6px;background:#1a1a1a"></div>
+
+      <div style="margin-top:12px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:8px">🎨 O que cada cor significa</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;font-size:11.5px;color:var(--text-dim);line-height:1.45">
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <span style="width:14px;height:14px;border-radius:50%;background:#ffc73a;display:inline-block;flex-shrink:0;margin-top:1px;border:2px solid #1a1a1a"></span>
+            <div><strong style="color:var(--text)">H — Hub Itápolis</strong><br><span style="font-size:10.5px">Ponto onde o caminhão chega e a carga é redistribuída (cross-dock)</span></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <span style="width:14px;height:14px;border-radius:50%;background:#888;display:inline-block;flex-shrink:0;margin-top:1px;color:#fff;font-size:8px;text-align:center;font-weight:700;line-height:14px">M</span>
+            <div><strong style="color:var(--text)">M — Mauá</strong><br><span style="font-size:10.5px">CD Super ABC, ponto de coleta inicial</span></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <span style="width:14px;height:14px;border-radius:50%;background:#4ade80;display:inline-block;flex-shrink:0;margin-top:1px;border:2px solid #1a1a1a"></span>
+            <div><strong style="color:var(--ok)">Verde — Cidade saudável</strong><br><span style="font-size:10.5px">Pedidos com frete dentro do esperado (menor que o valor da NF)</span></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <span style="width:14px;height:14px;border-radius:50%;background:#f87171;display:inline-block;flex-shrink:0;margin-top:1px;border:2px solid #1a1a1a"></span>
+            <div><strong style="color:var(--err)">Vermelho — Frete &gt; NF</strong><br><span style="font-size:10.5px">Pelo menos um pedido dessa cidade tem frete maior que o valor da nota — sai no prejuízo</span></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <span style="width:14px;height:14px;border-radius:50%;background:#888;display:inline-block;flex-shrink:0;margin-top:1px;border:2px dashed #f87171"></span>
+            <div><strong style="color:var(--text)">Cinza tracejado — Não atendida</strong><br><span style="font-size:10.5px">Cidade fora da malha da transportadora ativa — só aparece no mapa se a cidade tiver coordenadas no cadastro</span></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <span style="display:inline-flex;flex-shrink:0;gap:1px;margin-top:1px">
+              <span style="width:8px;height:8px;border-radius:50%;background:#4ade80;border:1px solid #1a1a1a"></span>
+              <span style="width:14px;height:14px;border-radius:50%;background:#4ade80;border:1px solid #1a1a1a"></span>
+              <span style="width:18px;height:18px;border-radius:50%;background:#4ade80;border:1px solid #1a1a1a"></span>
+            </span>
+            <div><strong style="color:var(--text)">Tamanho da bolinha</strong><br><span style="font-size:10.5px">Cresce em escala logarítmica com o faturamento da cidade — destaca onde está o dinheiro</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;background:#1a1a1a;border:1px solid var(--line);border-radius:4px;padding:12px 14px;font-size:11px;line-height:1.55;color:var(--text-dim)">
+        <div style="color:var(--accent);font-weight:700;margin-bottom:6px;font-size:11.5px">💡 Como usar na prática</div>
+        <ul style="margin:0;padding-left:18px;color:var(--text-dim)">
+          <li style="margin-bottom:4px"><strong>Clique numa bolinha</strong> pra abrir o detalhe da cidade — número de pedidos, valor total, lista dos primeiros 5 clientes.</li>
+          <li style="margin-bottom:4px"><strong>Cidades muito longe e isoladas</strong> (uma bolinha sozinha lá no canto) custam caro pra atender — vale concentrar entregas próximas a elas.</li>
+          <li style="margin-bottom:4px"><strong>Cluster de várias bolinhas pequenas</strong> numa região = rota eficiente, custo de motorista diluído entre vários clientes.</li>
+          <li><strong>Pontos vermelhos</strong> são prioridade: ou negocia frete maior, ou reduz custo (consolida pedidos pequenos, evita reentregas).</li>
+        </ul>
+      </div>
+    </div>
+
     <!-- DETALHAMENTO POR PEDIDO -->
     <div class="panel">
       <div class="panel-title">🎯 Status por pedido — Ponto de equilíbrio</div>
@@ -1530,79 +1686,84 @@
    1. BASE DE DADOS — CIDADES (CKC default)
    ========================================================================= */
 const DEFAULT_CIDADES = [
-  ["Araraquara","Truck corredor","No corredor",70,"Itápolis (desvio)"],
-  ["Catanduva","Truck corredor","No corredor",90,"Itápolis (desvio)"],
-  ["Bebedouro","Truck corredor","No corredor",96,"Itápolis (desvio)"],
-  ["Ibitinga","Truck corredor","No corredor",44,"Itápolis (desvio)"],
-  ["Gavião Peixoto","F1","Araraquara e entorno",25,"Itápolis"],
-  ["Nova Europa","F1","Araraquara e entorno",30,"Itápolis"],
-  ["Tabatinga","F1","Araraquara e entorno",35,"Itápolis"],
-  ["Borborema","F1","Araraquara e entorno",65,"Itápolis"],
-  ["Novo Horizonte","F1","Araraquara e entorno",80,"Itápolis"],
-  ["Pindorama","F2","Catanduva / norte",55,"Itápolis"],
-  ["Santa Adélia","F2","Catanduva / norte",90,"Itápolis"],
-  ["Tabapuã","F2","Catanduva / norte",85,"Itápolis"],
-  ["Irapuã","F2","Catanduva / norte",75,"Itápolis"],
-  ["Urupês","F2","Catanduva / norte",65,"Itápolis"],
-  ["Mendonça","F2","Catanduva / norte",60,"Itápolis"],
-  ["Cajobi","F2","Catanduva / norte",90,"Itápolis"],
-  ["Paraíso","F2","Catanduva / norte",115,"Itápolis"],
-  ["Guaraci","F2","Catanduva / norte",100,"Itápolis"],
-  ["Barretos","F3","Barretos / Bebedouro",130,"Itápolis"],
-  ["Monte Azul Paulista","F3","Barretos / Bebedouro",110,"Itápolis"],
-  ["Severina","F3","Barretos / Bebedouro",95,"Itápolis"],
-  ["Olímpia","F3","Barretos / Bebedouro",100,"Itápolis"],
-  ["Bauru","F4","Bauru / Jaú",160,"Itápolis"],
-  ["Jaú","F4","Bauru / Jaú",95,"Itápolis"],
-  ["Pederneiras","F4","Bauru / Jaú",130,"Itápolis"],
-  ["Itapuí","F4","Bauru / Jaú",135,"Itápolis"],
-  ["Piratininga","F4","Bauru / Jaú",150,"Itápolis"],
-  ["Lençóis Paulista","F4","Bauru / Jaú",145,"Itápolis"],
-  ["Paulistânia","F4","Bauru / Jaú",155,"Itápolis"],
-  ["Espírito Santo do Turvo","F4","Bauru / Jaú",170,"Itápolis"],
-  ["Águas de Santa Bárbara","F4","Bauru / Jaú",180,"Itápolis"],
-  ["Manduri","F4","Bauru / Jaú",190,"Itápolis"],
-  ["Cerqueira César","F4","Bauru / Jaú",185,"Itápolis"],
-  ["Avaré","F4","Bauru / Jaú",210,"Itápolis"],
-  ["Marília","F5","Marília / Garça",105,"Itápolis"],
-  ["Garça","F5","Marília / Garça",100,"Itápolis"],
-  ["Vera Cruz","F5","Marília / Garça",95,"Itápolis"],
-  ["Gália","F5","Marília / Garça",85,"Itápolis"],
-  ["Oriente","F5","Marília / Garça",95,"Itápolis"],
-  ["Pompéia","F5","Marília / Garça",70,"Itápolis"],
-  ["Quintana","F5","Marília / Garça",90,"Itápolis"],
-  ["Herculândia","F5","Marília / Garça",100,"Itápolis"],
-  ["Tupã","F5","Marília / Garça",135,"Itápolis"],
-  ["Lacri","F5","Marília / Garça",110,"Itápolis"],
-  ["Bastos","F5","Marília / Garça",115,"Itápolis"],
-  ["Adamantina","F5","Marília / Garça",195,"Itápolis"],
-  ["Dracena","F5","Marília / Garça",250,"Itápolis"],
-  ["Lucélia","F5","Marília / Garça",215,"Itápolis"],
-  ["São José do Rio Preto","SJRP","Destino final corredor",506,"Mauá"],
-  ["Votuporanga","F6","SJRP e região",95,"SJRP"],
-  ["José Bonifácio","F6","SJRP e região",55,"SJRP"],
-  ["Neves Paulista","F6","SJRP e região",40,"SJRP"],
-  ["Monte Aprazível","F6","SJRP e região",60,"SJRP"],
-  ["Tanabi","F6","SJRP e região",45,"SJRP"],
-  ["Mirassol","F6","SJRP e região",18,"SJRP"],
-  ["Bálsamo","F6","SJRP e região",35,"SJRP"],
-  ["General Salgado","F6","SJRP e região",120,"SJRP"],
-  ["Auriflama","F6","SJRP e região",140,"SJRP"],
-  ["Cardoso","F6","SJRP e região",155,"SJRP"],
-  ["Franca","F7","Franca / Batatais",230,"Itápolis"],
-  ["Batatais","F7","Franca / Batatais",215,"Itápolis"],
-  ["Orlândia","F7","Franca / Batatais",210,"Itápolis"],
-  ["Patrocínio Paulista","F7","Franca / Batatais",230,"Itápolis"],
-  ["São Joaquim da Barra","F7","Franca / Batatais",250,"Itápolis"],
-  ["Guaíra","F7","Franca / Batatais",265,"Itápolis"],
-  ["Igarapava","F7","Franca / Batatais",280,"Itápolis"],
-  ["Jales","F8","Extremo noroeste",210,"SJRP"],
-  ["Fernandópolis","F8","Extremo noroeste",185,"SJRP"],
-  ["Valentim Gentil","F8","Extremo noroeste",115,"SJRP"],
-  ["Santa Fé do Sul","F8","Extremo noroeste",190,"SJRP"],
-  ["Ilha Solteira","F8","Extremo noroeste",195,"SJRP"],
-  ["Palmeira do Oeste","F8","Extremo noroeste",205,"SJRP"]
+  ["Araraquara","Truck corredor","No corredor",70,"Itápolis (desvio)",-21.7942,-48.1786],
+  ["Catanduva","Truck corredor","No corredor",90,"Itápolis (desvio)",-21.1378,-48.9728],
+  ["Bebedouro","Truck corredor","No corredor",96,"Itápolis (desvio)",-20.9489,-48.4794],
+  ["Ibitinga","Truck corredor","No corredor",44,"Itápolis (desvio)",-21.7572,-48.8294],
+  ["Gavião Peixoto","F1","Araraquara e entorno",25,"Itápolis",-21.8378,-48.4956],
+  ["Nova Europa","F1","Araraquara e entorno",30,"Itápolis",-21.7728,-48.5742],
+  ["Tabatinga","F1","Araraquara e entorno",35,"Itápolis",-21.7228,-48.6864],
+  ["Borborema","F1","Araraquara e entorno",65,"Itápolis",-21.6172,-49.0728],
+  ["Novo Horizonte","F1","Araraquara e entorno",80,"Itápolis",-21.4661,-49.2253],
+  ["Pindorama","F2","Catanduva / norte",55,"Itápolis",-21.1872,-48.9106],
+  ["Santa Adélia","F2","Catanduva / norte",90,"Itápolis",-21.2389,-48.8047],
+  ["Tabapuã","F2","Catanduva / norte",85,"Itápolis",-20.9617,-49.0286],
+  ["Irapuã","F2","Catanduva / norte",75,"Itápolis",-21.2742,-49.0517],
+  ["Urupês","F2","Catanduva / norte",65,"Itápolis",-21.2056,-49.2917],
+  ["Mendonça","F2","Catanduva / norte",60,"Itápolis",-21.1822,-49.5783],
+  ["Cajobi","F2","Catanduva / norte",90,"Itápolis",-20.8722,-48.8083],
+  ["Paraíso","F2","Catanduva / norte",115,"Itápolis",-21.0181,-48.7686],
+  ["Guaraci","F2","Catanduva / norte",100,"Itápolis",-20.4564,-48.9419],
+  ["Barretos","F3","Barretos / Bebedouro",130,"Itápolis",-20.5572,-48.5683],
+  ["Monte Azul Paulista","F3","Barretos / Bebedouro",110,"Itápolis",-20.9069,-48.6411],
+  ["Severínia","F3","Barretos / Bebedouro",95,"Itápolis",-20.8089,-48.8053],
+  ["Olímpia","F3","Barretos / Bebedouro",100,"Itápolis",-20.7367,-48.9136],
+  ["Bauru","F4","Bauru / Jaú",160,"Itápolis",-22.3145,-49.0606],
+  ["Jaú","F4","Bauru / Jaú",95,"Itápolis",-22.2961,-48.5578],
+  ["Pederneiras","F4","Bauru / Jaú",130,"Itápolis",-22.3517,-48.7750],
+  ["Itapuí","F4","Bauru / Jaú",135,"Itápolis",-22.2367,-48.6772],
+  ["Piratininga","F4","Bauru / Jaú",150,"Itápolis",-22.4133,-49.1336],
+  ["Lençóis Paulista","F4","Bauru / Jaú",145,"Itápolis",-22.5983,-48.8003],
+  ["Paulistânia","F4","Bauru / Jaú",155,"Itápolis",-22.5778,-49.4022],
+  ["Espírito Santo do Turvo","F4","Bauru / Jaú",170,"Itápolis",-22.6783,-49.4322],
+  ["Águas de Santa Bárbara","F4","Bauru / Jaú",180,"Itápolis",-22.8767,-49.2422],
+  ["Manduri","F4","Bauru / Jaú",190,"Itápolis",-23.0033,-49.3211],
+  ["Cerqueira César","F4","Bauru / Jaú",185,"Itápolis",-23.0383,-49.1675],
+  ["Avaré","F4","Bauru / Jaú",210,"Itápolis",-23.0989,-48.9261],
+  ["Marília","F5","Marília / Garça",105,"Itápolis",-22.2139,-49.9456],
+  ["Garça","F5","Marília / Garça",100,"Itápolis",-22.2128,-49.6644],
+  ["Vera Cruz","F5","Marília / Garça",95,"Itápolis",-22.2178,-49.8161],
+  ["Gália","F5","Marília / Garça",85,"Itápolis",-22.2917,-49.5483],
+  ["Oriente","F5","Marília / Garça",95,"Itápolis",-22.1556,-50.0894],
+  ["Pompéia","F5","Marília / Garça",70,"Itápolis",-22.1058,-50.1714],
+  ["Quintana","F5","Marília / Garça",90,"Itápolis",-22.0875,-50.3094],
+  ["Herculândia","F5","Marília / Garça",100,"Itápolis",-22.0144,-50.3825],
+  ["Tupã","F5","Marília / Garça",135,"Itápolis",-21.9342,-50.5139],
+  ["Lacri","F5","Marília / Garça",110,"Itápolis",-21.6589,-50.4628],
+  ["Bastos","F5","Marília / Garça",115,"Itápolis",-21.9197,-50.7322],
+  ["Adamantina","F5","Marília / Garça",195,"Itápolis",-21.6864,-51.0728],
+  ["Dracena","F5","Marília / Garça",250,"Itápolis",-21.4839,-51.5328],
+  ["Lucélia","F5","Marília / Garça",215,"Itápolis",-21.7194,-51.0203],
+  ["São José do Rio Preto","SJRP","Destino final corredor",506,"Mauá",-20.8194,-49.3794],
+  ["Votuporanga","F6","SJRP e região",95,"SJRP",-20.4231,-49.9728],
+  ["José Bonifácio","F6","SJRP e região",55,"SJRP",-21.0533,-49.6878],
+  ["Neves Paulista","F6","SJRP e região",40,"SJRP",-20.8419,-49.6353],
+  ["Monte Aprazível","F6","SJRP e região",60,"SJRP",-20.7689,-49.7211],
+  ["Tanabi","F6","SJRP e região",45,"SJRP",-20.6244,-49.6531],
+  ["Mirassol","F6","SJRP e região",18,"SJRP",-20.8169,-49.5217],
+  ["Bálsamo","F6","SJRP e região",35,"SJRP",-20.7339,-49.5797],
+  ["General Salgado","F6","SJRP e região",120,"SJRP",-20.6481,-50.3686],
+  ["Auriflama","F6","SJRP e região",140,"SJRP",-20.6831,-50.5556],
+  ["Cardoso","F6","SJRP e região",155,"SJRP",-20.0772,-49.9136],
+  ["Franca","F7","Franca / Batatais",230,"Itápolis",-20.5386,-47.4006],
+  ["Batatais","F7","Franca / Batatais",215,"Itápolis",-20.8911,-47.5856],
+  ["Orlândia","F7","Franca / Batatais",210,"Itápolis",-20.7197,-47.8856],
+  ["Patrocínio Paulista","F7","Franca / Batatais",230,"Itápolis",-20.6358,-47.2806],
+  ["São Joaquim da Barra","F7","Franca / Batatais",250,"Itápolis",-20.5803,-47.8567],
+  ["Guaíra","F7","Franca / Batatais",265,"Itápolis",-20.3186,-48.3133],
+  ["Igarapava","F7","Franca / Batatais",280,"Itápolis",-20.0394,-47.7464],
+  ["Jales","F8","Extremo noroeste",210,"SJRP",-20.2683,-50.5458],
+  ["Fernandópolis","F8","Extremo noroeste",185,"SJRP",-20.2839,-50.2467],
+  ["Valentim Gentil","F8","Extremo noroeste",115,"SJRP",-20.4197,-50.0883],
+  ["Santa Fé do Sul","F8","Extremo noroeste",190,"SJRP",-20.2117,-50.9281],
+  ["Ilha Solteira","F8","Extremo noroeste",195,"SJRP",-20.4314,-51.3422],
+  ["Palmeira do Oeste","F8","Extremo noroeste",205,"SJRP",-20.4150,-50.7647]
 ];
+
+// Coordenadas dos hubs/origem
+const HUB_ITAPOLIS = { nome: "Hub CKC — Itápolis", lat: -21.5947, lng: -48.8083 };
+const HUB_MAUA = { nome: "CD Super ABC — Mauá", lat: -23.6878, lng: -46.4675 };
+const HUB_SJRP = { nome: "SJRP — saída F6/F8", lat: -20.8194, lng: -49.3794 };
 
 /* =========================================================================
    2. CONFIGURAÇÃO PADRÃO (CKC)
@@ -1687,7 +1848,9 @@ function buildCidadeIndex() {
   state.cidades.forEach(c => {
     const key = normCity(c[0]);
     if (key) state.cidadeIndex.set(key, {
-      cidade: c[0], rota: c[1], regiao: c[2], km: Number(c[3]) || 0, saida: c[4]
+      cidade: c[0], rota: c[1], regiao: c[2], km: Number(c[3]) || 0, saida: c[4],
+      lat: c[5] != null ? Number(c[5]) : null,
+      lng: c[6] != null ? Number(c[6]) : null
     });
   });
 }
@@ -1822,6 +1985,7 @@ function parseRows(rows) {
     const cliente = String(getField("cliente") ?? "").trim();
     const numero = String(getField("numero") ?? "").trim();
     const valor = parseNum(getField("valor"));
+    const volumes = parseNum(getField("volumes")) || null;
 
     result.push({
       id: state.nextId++,
@@ -1829,6 +1993,7 @@ function parseRows(rows) {
       cliente,
       numero,
       valorNF: valor,
+      volumes,            // qtd de volumes (do romaneio, se houver)
       peso: null,        // o usuário preenche
       pedagio: 0,
       // será preenchido em enrichPedido()
@@ -1854,6 +2019,8 @@ function enrichPedido(p) {
     p.regiao = match.regiao;
     p.km = match.km;
     p.saida = match.saida;
+    p.lat = match.lat;
+    p.lng = match.lng;
     p.matched = true;
   } else {
     p.cidade = p.cidadeRaw;
@@ -1861,6 +2028,8 @@ function enrichPedido(p) {
     p.regiao = "Não atendida";
     p.km = 0;
     p.saida = "—";
+    p.lat = null;
+    p.lng = null;
     p.matched = false;
   }
   return p;
@@ -2550,6 +2719,49 @@ document.getElementById("btnClearPedidos").addEventListener("click", () => {
   renderPedidos();
 });
 
+/* Peso distribuído por número de volumes do romaneio */
+document.getElementById("btnFillPesoVol").addEventListener("click", () => {
+  // Identificar pedidos sem peso, com volumes informados
+  const semPeso = state.pedidos.filter(p => !p.peso || p.peso <= 0);
+  if (semPeso.length === 0) {
+    alert("Todos os pedidos já têm peso preenchido.");
+    return;
+  }
+  const comVol = semPeso.filter(p => Number(p.volumes) > 0);
+  if (comVol.length === 0) {
+    alert("Nenhum pedido tem número de volumes informado. O romaneio precisa ter a coluna VOLUMES (ou QVOLUME).");
+    return;
+  }
+  const semVol = semPeso.length - comVol.length;
+
+  const pesoTotal = prompt(
+    `Peso TOTAL da carga (kg)?\n\n${comVol.length} pedido(s) têm volumes informados — o peso será distribuído proporcionalmente.` +
+    (semVol > 0 ? `\n${semVol} pedido(s) ficarão sem peso (sem volumes no romaneio).` : ""),
+    ""
+  );
+  if (!pesoTotal) return;
+  const total = parseNum(pesoTotal);
+  if (total <= 0) { alert("Peso inválido."); return; }
+
+  // Soma de volumes
+  const totalVol = comVol.reduce((s, p) => s + Number(p.volumes || 0), 0);
+  if (totalVol <= 0) { alert("Soma de volumes é zero."); return; }
+
+  // Peso médio por volume
+  const pesoPorVol = total / totalVol;
+  comVol.forEach(p => {
+    p.peso = roundCents(pesoPorVol * Number(p.volumes));
+  });
+
+  renderPedidos();
+
+  // Feedback
+  const mediaVol = (totalVol / comVol.length).toFixed(1);
+  const msg = `✓ ${total} kg distribuídos entre ${comVol.length} pedido(s) proporcional aos volumes (${totalVol} volumes no total · média ${mediaVol} vol/pedido · ~${pesoPorVol.toFixed(2)} kg/volume).` +
+    (semVol > 0 ? `\n\n${semVol} pedido(s) ficaram sem peso por não terem volumes no romaneio.` : "");
+  alert(msg);
+});
+
 document.getElementById("hideUnmatched").addEventListener("change", renderPedidos);
 
 /* =========================================================================
@@ -3156,6 +3368,8 @@ function showAnaliseContent() {
   document.getElementById("tabAnalise").querySelector(".tab-full").textContent = "💼 Análise Própria";
   document.getElementById("tabAnalise").querySelector(".tab-short").textContent = "💼 Análise";
   calcAnalise();
+  // Forçar reflow do mapa após a aba ficar visível
+  setTimeout(() => { if (mapaInstance) try { mapaInstance.invalidateSize(); } catch (e) {} }, 200);
 }
 
 function showAnaliseLock() {
@@ -3460,6 +3674,11 @@ function calcAnalise() {
 
   // Break-even por pedido
   renderBreakEven(propBe, sugMinPed, esc.pedidosA);
+
+  // Novos painéis: margem por rota, sugestão de carga, mapa
+  renderMargemPorRota(esc.pedidosA, custoPropImprev, esc.pedidosB);
+  renderSugestaoCarga(esc.pedidosA, custoPropImprev, i.margem);
+  renderMapaViagem(esc.pedidosA);
 }
 
 // Helper: estima o custo proporcional de fazer um subset de pedidos com frota própria
@@ -3505,6 +3724,382 @@ function renderBreakEven(beMinimo, beSugerido, pedidosLista) {
     </tr>`;
   });
   body.innerHTML = html;
+}
+
+/* ===========================================================
+   MARGEM POR ROTA — gráfico SVG horizontal
+   =========================================================== */
+function renderMargemPorRota(pedidosLista, custoPropTotal, pedidosTransp) {
+  const chartEl = document.getElementById("margemRotaChart");
+  const legendEl = document.getElementById("margemRotaLegend");
+  if (!chartEl) return;
+
+  if (!pedidosLista || pedidosLista.length === 0) {
+    chartEl.innerHTML = `<div style="text-align:center;color:var(--text-mute);padding:30px;font-size:12px">Sem pedidos para analisar.</div>`;
+    legendEl.innerHTML = "";
+    return;
+  }
+
+  // Agrupar por rota
+  const grupos = new Map();
+  for (const p of pedidosLista) {
+    const k = p.rota || "—";
+    if (!grupos.has(k)) grupos.set(k, { pedidos: [], fat: 0, km: 0, cidadesKm: new Map() });
+    const g = grupos.get(k);
+    g.pedidos.push(p);
+    g.fat += Number(p.valorNF) || 0;
+    if (p.matched) {
+      const cKey = normCity(p.cidade);
+      if (!g.cidadesKm.has(cKey)) g.cidadesKm.set(cKey, p.kmOverride != null ? Number(p.kmOverride) : Number(p.km) || 0);
+    }
+  }
+  // KM por rota = soma das cidades únicas
+  grupos.forEach(g => { g.km = 0; g.cidadesKm.forEach(km => g.km += km); });
+
+  // Custos da transportadora por rota (mapa pedido → rota → soma)
+  const custoTranspPorRota = new Map();
+  if (pedidosTransp && pedidosTransp.length > 0) {
+    for (const p of pedidosTransp) {
+      const c = calcPedido(p);
+      const k = p.rota || "—";
+      custoTranspPorRota.set(k, (custoTranspPorRota.get(k) || 0) + c.total);
+    }
+  }
+
+  // Total de km e fat para ratear o custo fixo da própria
+  const totalKm = Array.from(grupos.values()).reduce((s, g) => s + g.km, 0);
+  const totalPed = pedidosLista.length;
+
+  // Calcular margem por rota
+  const linhas = [];
+  let maxAbs = 0;
+  grupos.forEach((g, rota) => {
+    // Rateio do custo fixo: 50% por km, 50% por pedido (heurística — viagem combina ambos)
+    const rateioKm = totalKm > 0 ? (g.km / totalKm) * 0.5 : 0;
+    const rateioPed = totalPed > 0 ? (g.pedidos.length / totalPed) * 0.5 : 0;
+    const custoAloc = custoPropTotal * (rateioKm + rateioPed);
+    const margem = g.fat - custoAloc;
+    const margemPct = g.fat > 0 ? (margem / g.fat * 100) : 0;
+    linhas.push({ rota, label: rotaLabelCurto(rota), pedidos: g.pedidos.length, fat: g.fat, km: g.km, custoAloc, margem, margemPct });
+    maxAbs = Math.max(maxAbs, Math.abs(margem));
+  });
+
+  // Ordenar rotas (igual ao resto do app)
+  const ordemRotas = ["SJRP", "Truck corredor", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "—"];
+  linhas.sort((a, b) => {
+    const ia = ordemRotas.indexOf(a.rota); const ib = ordemRotas.indexOf(b.rota);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  // Renderizar barras SVG (horizontais)
+  const w = chartEl.clientWidth || 600;
+  const rowH = 30;
+  const labelW = 90;
+  const valueW = 100;
+  const barAreaW = w - labelW - valueW - 10;
+  const centerX = labelW + barAreaW / 2;  // eixo zero no meio
+  const h = linhas.length * rowH + 26;
+  const escala = maxAbs > 0 ? (barAreaW / 2 - 4) / maxAbs : 0;
+
+  let svg = `<svg width="100%" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:Segoe UI,system-ui,sans-serif">`;
+  // Linha vertical do zero
+  svg += `<line x1="${centerX}" y1="6" x2="${centerX}" y2="${linhas.length * rowH + 8}" stroke="#666" stroke-width="0.8" stroke-dasharray="2,2"/>`;
+  svg += `<text x="${centerX}" y="${linhas.length * rowH + 22}" text-anchor="middle" font-size="9" fill="#888">zero (break-even da viagem)</text>`;
+
+  linhas.forEach((l, i) => {
+    const y = i * rowH + 8;
+    const cy = y + rowH/2 - 4;
+    // Label rota
+    svg += `<text x="${labelW - 6}" y="${cy + 4}" text-anchor="end" font-size="11" fill="#f3f3f3" font-weight="600">${escapeXml(l.label)}</text>`;
+    svg += `<text x="${labelW - 6}" y="${cy + 14}" text-anchor="end" font-size="9" fill="#888">${l.pedidos} ped · ${fmtNum(l.km,0)}km</text>`;
+
+    // Barra
+    const lenAbs = Math.abs(l.margem) * escala;
+    const isPos = l.margem >= 0;
+    const x0 = isPos ? centerX : centerX - lenAbs;
+    const color = isPos ? "#4ade80" : "#f87171";
+    const bg = isPos ? "#1f2a1f" : "#2a1414";
+    svg += `<rect x="${x0}" y="${cy - 6}" width="${lenAbs}" height="18" fill="${color}" opacity="0.85" rx="2"/>`;
+
+    // Valor
+    const labelText = (isPos ? "+ " : "− ") + fmtBRL(Math.abs(l.margem));
+    svg += `<text x="${labelW + barAreaW + 6}" y="${cy + 4}" font-size="11" font-weight="700" fill="${color}">${labelText}</text>`;
+    svg += `<text x="${labelW + barAreaW + 6}" y="${cy + 14}" font-size="9" fill="#888">${fmtNum(l.margemPct,1)}% margem</text>`;
+  });
+  svg += `</svg>`;
+  chartEl.innerHTML = svg;
+
+  // Legenda inferior — totais
+  const totFat = linhas.reduce((s, l) => s + l.fat, 0);
+  const totMargem = linhas.reduce((s, l) => s + l.margem, 0);
+  const lucrativas = linhas.filter(l => l.margem >= 0).length;
+  legendEl.innerHTML = `
+    <strong>${linhas.length}</strong> rota(s) — <strong style="color:#4ade80">${lucrativas} lucrativa(s)</strong>,
+    <strong style="color:#f87171">${linhas.length - lucrativas} no prejuízo</strong>.
+    Faturamento total ${fmtBRL(totFat)} · margem ${fmtBRL(totMargem)}.
+    Rateio: 50% por km rodado + 50% por nº de pedidos.
+  `;
+}
+
+function rotaLabelCurto(rota) {
+  const map = {
+    "SJRP": "SJRP",
+    "Truck corredor": "Corredor",
+    "F1": "F1 — Araraq.",
+    "F2": "F2 — Catand.",
+    "F3": "F3 — Barret.",
+    "F4": "F4 — Bauru",
+    "F5": "F5 — Marília",
+    "F6": "F6 — SJRP reg.",
+    "F7": "F7 — Franca",
+    "F8": "F8 — Noroeste",
+    "—": "Sem rota"
+  };
+  return map[rota] || rota;
+}
+
+function escapeXml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+/* ===========================================================
+   SUGESTÃO DE CARGA ÓTIMA — quantos pedidos faltam por rota
+   =========================================================== */
+function renderSugestaoCarga(pedidosLista, custoFixoTotal, margemAlvoPct) {
+  const body = document.getElementById("sugCargaBody");
+  const alertBox = document.getElementById("sugCargaAlert");
+
+  // Cards de topo
+  const fatAtual = pedidosLista.reduce((s, p) => s + (Number(p.valorNF) || 0), 0);
+  const fatMinimo = custoFixoTotal * (1 + (margemAlvoPct || 0) / 100);
+  const gap = fatMinimo - fatAtual;
+
+  document.getElementById("sugCustoFixo").textContent = fmtBRL(custoFixoTotal);
+  document.getElementById("sugFatMin").textContent = fmtBRL(fatMinimo);
+  document.getElementById("sugFatAtual").textContent = fmtBRL(fatAtual);
+  const sugGapEl = document.getElementById("sugGap");
+  if (gap > 0) {
+    sugGapEl.textContent = "+ " + fmtBRL(gap) + " a adicionar";
+    sugGapEl.style.color = "var(--err)";
+  } else {
+    sugGapEl.textContent = fmtBRL(Math.abs(gap)) + " de folga";
+    sugGapEl.style.color = "var(--ok)";
+  }
+
+  if (!pedidosLista || pedidosLista.length === 0) {
+    body.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-mute)">Sem pedidos para analisar.</td></tr>`;
+    alertBox.innerHTML = "";
+    return;
+  }
+
+  // Ticket médio da operação
+  const ticketMedio = fatAtual / pedidosLista.length;
+
+  // Agrupar
+  const grupos = new Map();
+  for (const p of pedidosLista) {
+    const k = p.rota || "—";
+    if (!grupos.has(k)) grupos.set(k, { pedidos: [], fat: 0, cidadesKm: new Map() });
+    const g = grupos.get(k);
+    g.pedidos.push(p);
+    g.fat += Number(p.valorNF) || 0;
+    if (p.matched) {
+      const cKey = normCity(p.cidade);
+      if (!g.cidadesKm.has(cKey)) g.cidadesKm.set(cKey, p.kmOverride != null ? Number(p.kmOverride) : Number(p.km) || 0);
+    }
+  }
+  const totalKm = Array.from(grupos.values()).reduce((s, g) => {
+    let k = 0; g.cidadesKm.forEach(v => k += v); return s + k;
+  }, 0);
+  const totalPed = pedidosLista.length;
+
+  const ordemRotas = ["SJRP", "Truck corredor", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "—"];
+  const linhas = [];
+  grupos.forEach((g, rota) => {
+    let kmRota = 0; g.cidadesKm.forEach(v => kmRota += v);
+    const rateioKm = totalKm > 0 ? (kmRota / totalKm) * 0.5 : 0;
+    const rateioPed = totalPed > 0 ? (g.pedidos.length / totalPed) * 0.5 : 0;
+    const custoAloc = custoFixoTotal * (rateioKm + rateioPed);
+    const margem = g.fat - custoAloc;
+    const ped_extras = margem < 0 && ticketMedio > 0 ? Math.ceil(Math.abs(margem) / ticketMedio) : 0;
+    linhas.push({ rota, pedidos: g.pedidos.length, fat: g.fat, custoAloc, margem, ped_extras, km: kmRota });
+  });
+  linhas.sort((a, b) => {
+    const ia = ordemRotas.indexOf(a.rota); const ib = ordemRotas.indexOf(b.rota);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  let html = "";
+  let totalExtras = 0;
+  linhas.forEach(l => {
+    let cls = "status-ok", lbl = "✅ Lucrativa";
+    if (l.margem < 0) { cls = "status-bad"; lbl = "🔴 Prejuízo"; totalExtras += l.ped_extras; }
+    else if (l.margem < l.custoAloc * 0.15) { cls = "status-warn"; lbl = "⚠️ Apertada"; }
+    html += `<tr>
+      <td>${escapeHtml(rotaLabelCurto(l.rota))}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${l.pedidos}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtBRL(l.fat)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-dim)">${fmtBRL(l.custoAloc)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:${l.margem >= 0 ? 'var(--ok)' : 'var(--err)'};font-weight:600">${l.margem >= 0 ? '+' : ''}${fmtBRL(l.margem)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${l.ped_extras > 0 ? `<strong style="color:var(--warn)">+${l.ped_extras}</strong>` : "—"}</td>
+      <td><span class="${cls}">${lbl}</span></td>
+    </tr>`;
+  });
+  body.innerHTML = html;
+
+  // Alerta
+  if (totalExtras > 0) {
+    // Sugerir cidades — pegar cidades atendidas que NÃO estão no romaneio, da malha
+    const cidadesNoRomaneio = new Set(pedidosLista.filter(p=>p.matched).map(p => normCity(p.cidade)));
+    const cidadesDaMalha = state.cidades.filter(c => !cidadesNoRomaneio.has(normCity(c[0])));
+    const sugestoes = cidadesDaMalha.slice(0, 5).map(c => c[0]).join(", ");
+    alertBox.innerHTML = `<div class="alert">💡 <strong>${totalExtras} pedido(s) extras</strong> com ticket médio (${fmtBRL(ticketMedio)}) bastariam para zerar o prejuízo das rotas vermelhas. ${sugestoes ? `Cidades da malha sem pedidos no romaneio atual: <strong>${escapeHtml(sugestoes)}</strong>.` : ""}</div>`;
+  } else if (gap < 0) {
+    alertBox.innerHTML = `<div class="alert ok">✅ Faturamento atual já cobre o custo + margem alvo. Operação saudável.</div>`;
+  } else {
+    alertBox.innerHTML = `<div class="alert">⚠ Faturamento ainda abaixo da meta de margem, mas todas as rotas individualmente cobrem seus custos alocados.</div>`;
+  }
+}
+
+/* ===========================================================
+   MAPA VISUAL — Leaflet
+   =========================================================== */
+let mapaInstance = null;
+let mapaMarkers = [];
+let mapaLines = [];
+
+function renderMapaViagem(pedidosLista) {
+  const elMapa = document.getElementById("mapaViagem");
+  if (!elMapa || typeof L === "undefined") {
+    if (elMapa) elMapa.innerHTML = `<div style="text-align:center;color:var(--text-mute);padding:60px;font-size:12px">Biblioteca de mapas não disponível offline.</div>`;
+    return;
+  }
+
+  // Inicializa map só uma vez
+  if (!mapaInstance) {
+    try {
+      mapaInstance = L.map(elMapa, { zoomControl: true, attributionControl: false }).setView([-21.5, -49.0], 7);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '© OpenStreetMap'
+      }).addTo(mapaInstance);
+      L.control.attribution({ prefix: false }).addAttribution('© OpenStreetMap').addTo(mapaInstance);
+    } catch (e) {
+      elMapa.innerHTML = `<div style="text-align:center;color:var(--text-mute);padding:60px;font-size:12px">Erro ao inicializar mapa: ${e.message}</div>`;
+      return;
+    }
+  }
+
+  // Limpar markers/linhas anteriores
+  mapaMarkers.forEach(m => mapaInstance.removeLayer(m));
+  mapaLines.forEach(l => mapaInstance.removeLayer(l));
+  mapaMarkers = [];
+  mapaLines = [];
+
+  // Agrupar pedidos por cidade
+  const cidadesMap = new Map();
+  for (const p of pedidosLista) {
+    const key = normCity(p.cidade || p.cidadeRaw);
+    if (!cidadesMap.has(key)) {
+      cidadesMap.set(key, { cidade: p.cidade || p.cidadeRaw, pedidos: [], lat: p.lat, lng: p.lng, matched: p.matched, rota: p.rota });
+    }
+    cidadesMap.get(key).pedidos.push(p);
+  }
+
+  // Adicionar marker do hub Itápolis
+  const hubIcon = L.divIcon({
+    html: `<div style="background:#ffc73a;border:2px solid #1a1a1a;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:#1a1a1a;font-size:9px;font-weight:700;box-shadow:0 0 6px rgba(255,199,58,0.6)">H</div>`,
+    className: "", iconSize: [18, 18], iconAnchor: [9, 9]
+  });
+  const hubMarker = L.marker([HUB_ITAPOLIS.lat, HUB_ITAPOLIS.lng], { icon: hubIcon })
+    .addTo(mapaInstance)
+    .bindPopup(`<strong>${HUB_ITAPOLIS.nome}</strong><br>Hub de cross-dock`);
+  mapaMarkers.push(hubMarker);
+
+  // Marker do CD Mauá
+  const mauaIcon = L.divIcon({
+    html: `<div style="background:#888;border:2px solid #1a1a1a;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;font-weight:700">M</div>`,
+    className: "", iconSize: [16, 16], iconAnchor: [8, 8]
+  });
+  const mauaMarker = L.marker([HUB_MAUA.lat, HUB_MAUA.lng], { icon: mauaIcon })
+    .addTo(mapaInstance).bindPopup(`<strong>${HUB_MAUA.nome}</strong><br>Origem da coleta`);
+  mapaMarkers.push(mauaMarker);
+
+  // Linha tracejada Mauá → Itápolis
+  const linhaMaua = L.polyline([[HUB_MAUA.lat, HUB_MAUA.lng], [HUB_ITAPOLIS.lat, HUB_ITAPOLIS.lng]],
+    { color: "#888", weight: 1.5, dashArray: "5,5", opacity: 0.6 }).addTo(mapaInstance);
+  mapaLines.push(linhaMaua);
+
+  // Bounds
+  const bounds = [[HUB_ITAPOLIS.lat, HUB_ITAPOLIS.lng], [HUB_MAUA.lat, HUB_MAUA.lng]];
+
+  // Markers de cidades
+  cidadesMap.forEach((info) => {
+    if (info.lat == null || info.lng == null) return; // não tem coordenada
+
+    const fat = info.pedidos.reduce((s, p) => s + (Number(p.valorNF) || 0), 0);
+
+    // Cor baseada no status
+    let cor = "#4ade80"; // verde — atendida
+    let extraStyle = "";
+    let temFreteAlto = false;
+    for (const p of info.pedidos) {
+      const c = calcPedido(p);
+      const vNF = Number(p.valorNF) || 0;
+      if (vNF > 0 && c.total > vNF) { temFreteAlto = true; break; }
+    }
+    if (!info.matched) {
+      cor = "#888";
+      extraStyle = "border:2px dashed #f87171";
+    } else if (temFreteAlto) {
+      cor = "#f87171";  // vermelho — frete > NF
+    } else if (info.rota && info.rota.startsWith("F")) {
+      // Verde claro para cross-dock pequeno
+      cor = "#4ade80";
+    }
+    if (!extraStyle) extraStyle = "border:2px solid #1a1a1a";
+
+    // Tamanho proporcional ao faturamento (escala log)
+    const size = Math.min(28, Math.max(12, 10 + Math.log10(Math.max(fat, 100)) * 3));
+
+    const icon = L.divIcon({
+      html: `<div style="background:${cor};${extraStyle};border-radius:50%;width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;color:#1a1a1a;font-size:9px;font-weight:700;box-shadow:0 0 4px rgba(0,0,0,0.4)">${info.pedidos.length}</div>`,
+      className: "", iconSize: [size, size], iconAnchor: [size/2, size/2]
+    });
+
+    // Popup
+    let popup = `<div style="min-width:180px"><strong>${escapeHtml(info.cidade)}</strong><br>`;
+    popup += `<span style="color:#666;font-size:11px">${info.matched ? `Rota ${info.rota}` : "⚠ Não atendida"}</span><br><br>`;
+    popup += `<strong>${info.pedidos.length}</strong> pedido(s) · <strong>${fmtBRL(fat)}</strong><br>`;
+    if (temFreteAlto) popup += `<span style="color:#c00;font-size:11px">⚠ Frete maior que NF em algum pedido</span><br>`;
+    popup += `<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">`;
+    info.pedidos.slice(0, 5).forEach(p => {
+      popup += `<div style="font-size:11px;color:#333">#${escapeHtml(p.numero || "-")} · ${escapeHtml(truncate(p.cliente, 24))} · ${fmtBRL(Number(p.valorNF)||0)}</div>`;
+    });
+    if (info.pedidos.length > 5) popup += `<div style="font-size:10px;color:#888;margin-top:3px">…e mais ${info.pedidos.length - 5} pedido(s)</div>`;
+    popup += `</div>`;
+
+    const marker = L.marker([info.lat, info.lng], { icon })
+      .addTo(mapaInstance)
+      .bindPopup(popup);
+    mapaMarkers.push(marker);
+    bounds.push([info.lat, info.lng]);
+
+    // Linha tracejada Itápolis → cidade (sutil)
+    if (info.matched && info.rota !== "SJRP") {
+      const origem = (info.rota === "F6" || info.rota === "F8") ? HUB_SJRP : HUB_ITAPOLIS;
+      const linha = L.polyline([[origem.lat, origem.lng], [info.lat, info.lng]],
+        { color: temFreteAlto ? "#f87171" : "#ffc73a", weight: 1.2, opacity: 0.45 }).addTo(mapaInstance);
+      mapaLines.push(linha);
+    }
+  });
+
+  // Ajustar viewport
+  if (bounds.length > 1) {
+    try { mapaInstance.fitBounds(bounds, { padding: [30, 30] }); } catch (e) {}
+  }
+
+  // Forçar redraw (importante depois de mudança de tab)
+  setTimeout(() => { try { mapaInstance.invalidateSize(); } catch (e) {} }, 100);
 }
 
 // Botão recalcular
